@@ -1,0 +1,5 @@
+{
+  "target_model": "/path/to/DeepSeek-V2-Lite-Chat-experts-F16.gguf",
+  "draft_model": "/path/to/DeepSeek-V2-Lite-Chat-eagle3-F16.gguf",
+  "arguments": ["--eagle3", "--ssd-moe", "-ngl", "99", "-ngld", "99", "--draft", "8", "--draft-p-min", "0.5"]
+}

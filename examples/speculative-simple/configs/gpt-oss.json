@@ -1,0 +1,5 @@
+{
+  "target_model": "/path/to/gpt-oss-120b-experts-F16.gguf",
+  "draft_model": "/path/to/gpt-oss-120b-Eagle3-F16.gguf",
+  "arguments": ["--eagle3", "--ssd-moe", "-ngl", "99", "-ngld", "99", "--draft", "8", "--draft-p-min", "0.5"]
+}

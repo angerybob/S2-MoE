@@ -1,0 +1,11 @@
+{# 强制只走 final channel #}
+{% for m in messages %}
+{% if m['role'] == 'system' -%}
+<|start|>system<|message|>{{ m['content'] }}<|end|>
+{% elif m['role'] == 'user' -%}
+<|start|>user<|message|>{{ m['content'] }}<|end|>
+{% elif m['role'] == 'assistant' -%}
+<|start|>assistant<|channel|>final<|message|>{{ m['content'] }}<|end|>
+{% endif -%}
+{% endfor %}
+<|start|>assistant<|channel|>final<|message|>

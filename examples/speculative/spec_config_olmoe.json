@@ -1,0 +1,46 @@
+{
+  "model": "/path/to/OLMoE-1B-7B-0924-Instruct-experts-F16.gguf",
+  "draft_model": "/path/to/OLMoE-1B-7B-drafter.gguf",
+  "datasets": "../../datasets/human-eval.jsonl",
+  "questions_limit": 3,
+  "params": {
+    "n_predict": 64,
+    "temp": 1,
+    "n_gpu_layers": 99,
+    "n_gpu_layers_draft": 99,
+    "threads": 8,
+    "parallel": 2,
+    "kv_unified": true,
+    "no_warmup": true
+  },
+  "speculative": {
+    "n_draft": 8,
+    "p_split": 0.1,
+    "share_kv": true,
+    "moe_utility_spec": false,
+    "utility_test_iters": 4,
+    "utility_set_iters": 16,
+    "draft_expert_topk": 2
+  },
+  "moe": {
+    "reuse_strength": 0.4,
+    "reuse_expert_cap": 18
+  },
+  "pruning": {
+    "enable": 1,
+    "trace": false,
+    "max_nodes": 60,
+    "max_depth": 10,
+    "budget_b": 145.0,
+    "m_route": 8,
+    "k_tgt": 8,
+    "beta": 0.8,
+    "gamma": 2.0,
+    "lambda": 1.0,
+    "tpot": 30.0,
+    "eps": 9.0,
+    "expert_bytes": 32.768,
+    "bandwidth": 204.8,
+    "expert_max": 384
+  }
+}

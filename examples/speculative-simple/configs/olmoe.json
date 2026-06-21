@@ -1,0 +1,5 @@
+{
+  "target_model": "/path/to/OLMoE-1B-7B-F16.gguf",
+  "draft_model": "/path/to/OLMoE_1B_7B_Eagle3-F16.gguf",
+  "arguments": ["--eagle3", "-ngl", "99", "-ngld", "99", "--draft", "8", "--draft-p-min", "0.5"]
+}

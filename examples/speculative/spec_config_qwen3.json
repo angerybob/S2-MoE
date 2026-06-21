@@ -1,0 +1,52 @@
+{
+  "model": "/path/to/Qwen3-MoE-target.gguf",
+  "draft_model": "/path/to/Qwen3-MoE-drafter.gguf",
+  "datasets": "../../datasets/human-eval.jsonl",
+  "questions_limit": 3,
+  "hot_experts": "/path/to/hot_experts.json",
+  "params": {
+    "n_predict": 640,
+    "temp": 1,
+    "top_k": 4,
+    "min_p": 0.01,
+    "n_gpu_layers": 99,
+    "n_gpu_layers_draft": 99,
+    "threads": 8,
+    "parallel": 2,
+    "kv_unified": true,
+    "no_warmup": true,
+    "ssd_moe": true,
+    "accept_log": false,
+    "no_mmap": true
+  },
+  "speculative": {
+    "n_draft": 8,
+    "p_split": 0.1,
+    "share_kv": true,
+    "moe_utility_spec": false,
+    "utility_test_iters": 4,
+    "utility_set_iters": 16,
+    "draft_expert_topk": 3
+  },
+  "moe": {
+    "reuse_strength": 0.8,
+    "reuse_expert_cap": 14
+  },
+  "pruning": {
+    "enable": 1,
+    "trace": false,
+    "max_nodes": 60,
+    "max_depth": 10,
+    "budget_b": 54500.0,
+    "m_route": 8,
+    "k_tgt": 8,
+    "beta": 0.8,
+    "gamma": 2.0,
+    "lambda": 1.0,
+    "tpot": 1000.0,
+    "eps": 250.0,
+    "expert_bytes": 1400.0,
+    "bandwidth": 204.8,
+    "expert_max": 5840
+  }
+}

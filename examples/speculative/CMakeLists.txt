@@ -1,0 +1,12 @@
+set(TARGET llama-speculative)
+add_executable(${TARGET} speculative.cpp)
+install(TARGETS ${TARGET} RUNTIME)
+target_link_libraries(${TARGET} PRIVATE common llama ${CMAKE_THREAD_LIBS_INIT})
+target_compile_features(${TARGET} PRIVATE cxx_std_17)
+
+find_path(NVTX_INCLUDE_DIR nvToolsExt.h PATHS /usr/local/cuda/include)
+find_library(NVTX_LIBRARY nvToolsExt PATHS /usr/local/cuda/lib64)
+if (NVTX_INCLUDE_DIR AND NVTX_LIBRARY)
+    target_include_directories(${TARGET} PRIVATE ${NVTX_INCLUDE_DIR})
+    target_link_libraries(${TARGET} PRIVATE ${NVTX_LIBRARY})
+endif()

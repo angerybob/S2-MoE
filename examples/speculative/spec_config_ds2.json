@@ -1,0 +1,46 @@
+{
+  "model": "/path/to/DeepSeek-V2-Lite-Chat-experts-F16.gguf",
+  "draft_model": "/path/to/DeepSeek-V2-Lite-Chat-drafter.gguf",
+  "dataset": "../../datasets/human-eval.jsonl",
+  "n_questions": 1,
+  "params": {
+    "n_predict": 20480,
+    "n_ctx": 20480,
+    "temp": 0.8,
+    "top_k": 4,
+    "min_p": 0.01,
+    "n_gpu_layers": 99,
+    "n_gpu_layers_draft": 99,
+    "threads": 8,
+    "parallel": 1,
+    "kv_unified": false,
+    "no_warmup": true
+  },
+  "speculative": {
+    "n_draft": 8,
+    "p_split": 0.1,
+    "share_kv": true,
+    "draft_expert_topk": 1
+  },
+  "moe": {
+    "reuse_strength": 0.8,
+    "reuse_expert_cap": 12
+  },
+  "pruning": {
+    "enable": 1,
+    "trace": false,
+    "max_nodes": 60,
+    "max_depth": 10,
+    "budget_b": 145.0,
+    "m_route": 6,
+    "k_tgt": 6,
+    "beta": 0.8,
+    "gamma": 2.0,
+    "lambda": 1.0,
+    "tpot": 64.2,
+    "eps": 23.0,
+    "expert_bytes": 22.528,
+    "bandwidth": 204.8,
+    "expert_max": 384
+  }
+}

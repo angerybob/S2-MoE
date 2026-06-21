@@ -1,0 +1,35 @@
+{
+  // 流式生成覆盖 *_impl.py；入口 streamed_generated*.py 自带 # pyright
+  "exclude": [
+    "streamed_generated_cli_impl.py",
+    "**/streamed_generated_cli_impl.py",
+    "streamed_generated_impl.py",
+    "**/streamed_generated_impl.py"
+  ],
+  "ignore": [
+    "streamed_generated_cli_impl.py",
+    "**/streamed_generated_cli_impl.py",
+    "streamed_generated_impl.py",
+    "**/streamed_generated_impl.py"
+  ],
+  "extraPaths": ["gguf-py"],
+  "pythonVersion": "3.9",
+  "pythonPlatform": "All",
+  "reportUnusedImport": "warning",
+  "reportDuplicateImport": "error",
+  "reportDeprecated": "warning",
+  "reportUnnecessaryTypeIgnoreComment": "information",
+  "disableBytesTypePromotions": false, // TODO: change once Python 3.12 is the minimum
+  "executionEnvironments": [
+    {
+      // TODO: make this version override work correctly
+      "root": "gguf-py",
+      "pythonVersion": "3.8",
+    },
+    {
+      // uses match expressions in steps.py
+      "root": "tools/server/tests",
+      "pythonVersion": "3.10",
+    },
+  ],
+ }
