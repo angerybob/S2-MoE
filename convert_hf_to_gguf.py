@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sys
+from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 from hashlib import sha256
@@ -41,6 +42,75 @@ logger = logging.getLogger("hf-to-gguf")
 
 
 ###### MODEL DEFINITIONS ######
+
+@dataclass(frozen=True)
+class DFlashConfig:
+    block_size: int
+    mask_token_id: int
+    target_layers: list[int]
+    draft_vocab_size: int
+    decoder_config: dict[str, Any]
+    target_model: str | None = None
+
+
+def normalize_dflash_config(config: dict[str, Any]) -> DFlashConfig:
+    dflash_config = config.get("dflash_config")
+    if not isinstance(dflash_config, dict):
+        raise ValueError("DFlash config requires a dflash_config object")
+
+    target_layer_ids = dflash_config.get("target_layer_ids")
+    if not isinstance(target_layer_ids, list) or not target_layer_ids:
+        raise ValueError("DFlash config requires non-empty target_layer_ids")
+
+    block_size = int(config.get("block_size", 0))
+    if block_size < 2:
+        raise ValueError("DFlash block_size must be at least 2")
+
+    mask_token_id = int(dflash_config.get("mask_token_id", -1))
+    vocab_size = int(config.get("vocab_size", 0))
+    if mask_token_id < 0 or mask_token_id >= vocab_size:
+        raise ValueError("DFlash mask_token_id must be inside the draft vocabulary")
+
+    return DFlashConfig(
+        block_size=block_size,
+        mask_token_id=mask_token_id,
+        target_layers=[int(layer) + 1 for layer in target_layer_ids],
+        draft_vocab_size=vocab_size,
+        decoder_config=dict(config),
+    )
+
+
+def normalize_dflash_tensor_name(name: str) -> str:
+    if name == "fc.weight":
+        return "fc.weight"
+    if name == "hidden_norm.weight":
+        return "enc.output_norm.weight"
+    if name == "model.norm.weight":
+        return "output_norm.weight"
+
+    match = re.fullmatch(r"model\.layers\.(\d+)\.(.+)\.weight", name)
+    if match is None:
+        raise ValueError(f"Unsupported DFlash tensor: {name}")
+
+    layer, suffix = match.groups()
+    suffixes = {
+        "input_layernorm": "attn_norm",
+        "self_attn.q_proj": "attn_q",
+        "self_attn.q_norm": "attn_q_norm",
+        "self_attn.k_proj": "attn_k",
+        "self_attn.k_norm": "attn_k_norm",
+        "self_attn.v_proj": "attn_v",
+        "self_attn.o_proj": "attn_output",
+        "post_attention_layernorm": "ffn_norm",
+        "mlp.gate_proj": "ffn_gate",
+        "mlp.down_proj": "ffn_down",
+        "mlp.up_proj": "ffn_up",
+    }
+    mapped = suffixes.get(suffix)
+    if mapped is None:
+        raise ValueError(f"Unsupported DFlash tensor: {name}")
+    return f"blk.{layer}.{mapped}.weight"
+
 
 class SentencePieceTokenTypes(IntEnum):
     NORMAL = 1
@@ -3793,6 +3863,48 @@ class Qwen3Model(Qwen2Model):
                 if is_real_head:
                     return [cls_out_head]
 
+        return super().modify_tensors(data_torch, name, bid)
+
+
+@ModelBase.register("DFlashDraftModel")
+class DFlashModel(Qwen3Model):
+    model_arch = gguf.MODEL_ARCH.DFLASH
+
+    def set_vocab(self):
+        if self.target_model_dir is None:
+            raise ValueError(
+                "DFlash draft model requires --target-model-dir with the matching target tokenizer"
+            )
+        original_dir = self.dir_model
+        self.dir_model = self.target_model_dir
+        try:
+            super().set_vocab()
+        finally:
+            self.dir_model = original_dir
+
+    def set_gguf_parameters(self):
+        super().set_gguf_parameters()
+        normalized = normalize_dflash_config(self.hparams)
+        self.gguf_writer.add_uint32(
+            f"{self.gguf_writer.arch}.block_size",
+            normalized.block_size,
+        )
+        self.gguf_writer.add_uint32(
+            f"{self.gguf_writer.arch}.mask_token_id",
+            normalized.mask_token_id,
+        )
+        self.gguf_writer.add_array(
+            f"{self.gguf_writer.arch}.target_layers",
+            normalized.target_layers,
+        )
+
+    def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        if name == "fc.weight":
+            return [(normalize_dflash_tensor_name(name), data_torch)]
+        if name == "hidden_norm.weight":
+            return [(normalize_dflash_tensor_name(name), data_torch)]
+        if not name.startswith("model."):
+            name = "model." + name
         return super().modify_tensors(data_torch, name, bid)
 
 
