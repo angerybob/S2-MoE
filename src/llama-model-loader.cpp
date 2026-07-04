@@ -390,6 +390,11 @@ namespace GGUFMeta {
         return true;
     }
 
+    template bool llama_model_loader::get_arr<int32_t>(
+            const std::string & key,
+            std::vector<int32_t> & result,
+            bool required);
+
     template<typename T, size_t N_MAX>
     bool llama_model_loader::get_arr(const std::string & key, std::array<T, N_MAX> & result, bool required) {
         const gguf_context * ctx = meta.get();

@@ -29,6 +29,7 @@ add_library(llama
             llama-model-loader.cpp
             llama-model-saver.cpp
             llama-model.cpp
+            llama-model-dflash.cpp
             llama-model-eagle3.cpp
             llama-quant.cpp
             llama-sampling.cpp
