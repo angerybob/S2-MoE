@@ -23,6 +23,10 @@ struct common_speculative * common_speculative_init_eagle3(
         struct llama_context * ctx_decoder
 );
 
+struct common_speculative * common_speculative_init_dflash(
+        struct llama_context * ctx_tgt,
+        struct llama_context * ctx_dft);
+
 void common_speculative_free(struct common_speculative * spec);
 
 bool common_speculative_are_compatible(

@@ -215,6 +215,7 @@ struct common_params_speculative {
     int32_t prune_max_nodes = 60;
     bool    moe_utility_spec   = false; // Cascade-style adaptive draft length
     bool    eagle3             = false; // use EAGLE3 encoder/decoder speculative decoding
+    bool    dflash             = false; // use DFlash block speculative decoding
     int32_t utility_test_iters = 4;
     int32_t utility_set_iters  = 16;
     std::vector<std::pair<std::string, std::string>> replacements; // main to speculative model replacements

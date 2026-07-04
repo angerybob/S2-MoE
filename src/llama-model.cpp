@@ -21209,6 +21209,24 @@ uint64_t llama_model_n_params(const llama_model * model) {
     return model->n_elements();
 }
 
+int32_t llama_model_dflash_block_size(const llama_model * model) {
+    return model && model->arch == LLM_ARCH_DFLASH
+        ? static_cast<int32_t>(model->hparams.dflash_block_size)
+        : 0;
+}
+
+llama_token llama_model_dflash_mask_token(const llama_model * model) {
+    return model && model->arch == LLM_ARCH_DFLASH
+        ? static_cast<llama_token>(model->hparams.dflash_mask_token_id)
+        : -1;
+}
+
+uint32_t llama_model_dflash_target_layer_count(const llama_model * model) {
+    return model && model->arch == LLM_ARCH_DFLASH
+        ? static_cast<uint32_t>(model->dflash_target_layers.size())
+        : 0;
+}
+
 bool llama_model_has_encoder(const llama_model * model) {
     switch (model->arch) {
         case LLM_ARCH_T5:        return true;

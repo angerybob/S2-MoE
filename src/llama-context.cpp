@@ -1209,7 +1209,22 @@ int llama_context::decode(const llama_batch & batch_inp) {
             if (n_outputs) {
                 GGML_ASSERT( n_outputs_prev + n_outputs <= n_outputs_all);
                 GGML_ASSERT((n_outputs_prev + n_outputs)*n_vocab <= (int64_t) logits_size);
-                if (model.arch == LLM_ARCH_EAGLE && t_logits->ne[0] < n_vocab && !model.ea_layer.d2t_map.empty()) {
+                if (model.arch == LLM_ARCH_DFLASH && !model.ea_layer.d2t_map.empty()) {
+                    static thread_local std::vector<float> draft_logits;
+                    static thread_local std::vector<float> expanded_logits;
+
+                    const int64_t draft_vocab_size = t_logits->ne[0];
+                    GGML_ASSERT(static_cast<size_t>(draft_vocab_size) == model.ea_layer.d2t_map.size());
+                    draft_logits.resize(static_cast<size_t>(n_outputs) * draft_vocab_size);
+                    ggml_backend_tensor_get_async(
+                        backend_res, t_logits, draft_logits.data(), 0,
+                        draft_logits.size() * sizeof(float));
+                    synchronize();
+                    dflash_expand_logits(
+                        expanded_logits, draft_logits, model.ea_layer.d2t_map,
+                        static_cast<size_t>(n_vocab));
+                    std::memcpy(logits_out, expanded_logits.data(), expanded_logits.size() * sizeof(float));
+                } else if (model.arch == LLM_ARCH_EAGLE && t_logits->ne[0] < n_vocab && !model.ea_layer.d2t_map.empty()) {
                     const int64_t n_vocab_dft = t_logits->ne[0];
                     const int64_t last_idx = n_outputs - 1;
                     std::vector<float> logits_dft(n_vocab_dft);

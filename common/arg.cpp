@@ -3808,10 +3808,22 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_SPECULATIVE}));
     add_opt(common_arg(
+        {"--spec-type"}, "TYPE",
+        "speculative decoder type: draft-simple, draft-eagle3, or draft-dflash",
+        [](common_params & params, const std::string & value) {
+            params.speculative.eagle3 = value == "draft-eagle3";
+            params.speculative.dflash = value == "draft-dflash";
+            if (value != "draft-simple" && !params.speculative.eagle3 && !params.speculative.dflash) {
+                throw std::invalid_argument("unsupported --spec-type: " + value);
+            }
+        }
+    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE}));
+    add_opt(common_arg(
         {"--eagle3"},
         "use EAGLE3 encoder/decoder speculative decoding",
         [](common_params & params) {
             params.speculative.eagle3 = true;
+            params.speculative.dflash = false;
         }
     ).set_examples({LLAMA_EXAMPLE_SPECULATIVE}));
     add_opt(common_arg(

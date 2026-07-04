@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 
 void dflash_validate_config(
@@ -65,6 +66,33 @@ void dflash_configure_swa(
     hparams.rope_freq_scale_train_swa = hparams.rope_freq_scale_train;
     for (uint32_t il = 0; il < hparams.n_layer; ++il) {
         hparams.swa_layers[il] = pattern[il];
+    }
+}
+
+void dflash_expand_logits(
+        std::vector<float> & target_logits,
+        const std::vector<float> & draft_logits,
+        const std::vector<int32_t> & draft_to_target_delta,
+        size_t target_vocab_size) {
+    const size_t draft_vocab_size = draft_to_target_delta.size();
+    if (draft_vocab_size == 0 || draft_logits.size() % draft_vocab_size != 0) {
+        throw std::invalid_argument("DFlash logits do not match the draft vocabulary");
+    }
+
+    const size_t n_rows = draft_logits.size() / draft_vocab_size;
+    target_logits.assign(
+        n_rows * target_vocab_size,
+        -std::numeric_limits<float>::infinity());
+    for (size_t row = 0; row < n_rows; ++row) {
+        for (size_t draft_id = 0; draft_id < draft_vocab_size; ++draft_id) {
+            const int64_t target_id =
+                static_cast<int64_t>(draft_id) + draft_to_target_delta[draft_id];
+            if (target_id < 0 || static_cast<size_t>(target_id) >= target_vocab_size) {
+                throw std::invalid_argument("DFlash draft-to-target token mapping is out of range");
+            }
+            target_logits[row * target_vocab_size + target_id] =
+                draft_logits[row * draft_vocab_size + draft_id];
+        }
     }
 }
 

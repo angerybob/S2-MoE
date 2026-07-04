@@ -27,6 +27,12 @@ void dflash_configure_swa(
         uint32_t sliding_window,
         const std::vector<bool> & pattern);
 
+void dflash_expand_logits(
+        std::vector<float> & target_logits,
+        const std::vector<float> & draft_logits,
+        const std::vector<int32_t> & draft_to_target_delta,
+        size_t target_vocab_size);
+
 struct llm_build_dflash_encode : public llm_graph_context {
     llm_build_dflash_encode(const llama_model & model, const llm_graph_params & params);
 };
