@@ -434,9 +434,11 @@ static llama_tokens gen_dflash_draft(
         const float * features = llama_get_eagle3_target_features(ctx_tgt);
         GGML_ASSERT(features && "DFlash target features are not available");
 
-        const int32_t n_ubatch = static_cast<int32_t>(llama_n_ubatch(ctx_dft));
-        for (int32_t offset = 0; offset < n_new; offset += n_ubatch) {
-            const int32_t n_chunk = std::min(n_ubatch, n_new - offset);
+        // This Orin branch's batched 10240 -> 2048 encoder projection can
+        // silently return zero rows. Singleton calls use the correct matmul
+        // path and generation normally commits only a few positions per step.
+        constexpr int32_t n_chunk = 1;
+        for (int32_t offset = 0; offset < n_new; offset += n_chunk) {
             llama_batch enc_batch = {
                 /*.n_tokens  =*/ n_chunk,
                 /*.token     =*/ nullptr,
@@ -460,7 +462,9 @@ static llama_tokens gen_dflash_draft(
                 inject.pos[i] = spec->dflash_n_past + offset + i;
                 inject.n_seq_id[i] = 1;
                 inject.seq_id[i][0] = 0;
-                inject.logits[i] = false;
+                // The shared DFlash context has embeddings enabled, so its
+                // batch allocator requires every embedding row as an output.
+                inject.logits[i] = true;
             }
             GGML_ASSERT(llama_decode(ctx_dft, inject) == 0);
         }

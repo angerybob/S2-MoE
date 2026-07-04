@@ -114,7 +114,6 @@ llm_build_dflash_encode::llm_build_dflash_encode(
     cur = build_norm(cur, model.output_norm_enc, nullptr, LLM_NORM_RMS, -1);
     cb(cur, "enc_norm_out", -1);
 
-    ggml_set_output(cur);
     res->t_embd = cur;
     ggml_build_forward_expand(gf, cur);
 }

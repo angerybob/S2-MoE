@@ -946,7 +946,17 @@ int llama_context::encode(const llama_batch & batch_inp) {
                     GGML_ASSERT(embd != nullptr);
 
                     GGML_ASSERT(n_tokens*n_embd <= (int64_t) embd_size);
-                    ggml_backend_tensor_get_async(backend_embd, t_embd, embd, 0, n_tokens*n_embd*sizeof(float));
+                    const size_t output_bytes = n_tokens * n_embd * sizeof(float);
+                    if (model.arch == LLM_ARCH_DFLASH) {
+                        // The encoder graph can complete on a different CUDA
+                        // stream from the host output buffer.  A synchronous
+                        // tensor read alone does not order that scheduled work.
+                        synchronize();
+                        ggml_backend_tensor_get(t_embd, embd, 0, output_bytes);
+                    } else {
+                        ggml_backend_tensor_get_async(
+                            backend_embd, t_embd, embd, 0, output_bytes);
+                    }
                 } break;
             case LLAMA_POOLING_TYPE_MEAN:
             case LLAMA_POOLING_TYPE_CLS:
