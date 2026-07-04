@@ -148,6 +148,12 @@ llm_build_dflash_decode::llm_build_dflash_decode(
             const auto & layer = model.layers[il];
             ggml_tensor * k_cur = build_lora_mm(layer.wk, inp_g);
             ggml_tensor * v_cur = build_lora_mm(layer.wv, inp_g);
+            if (layer.bk) {
+                k_cur = ggml_add(ctx0, k_cur, layer.bk);
+            }
+            if (layer.bv) {
+                v_cur = ggml_add(ctx0, v_cur, layer.bv);
+            }
             k_cur = ggml_reshape_3d(ctx0, k_cur, n_embd_head, n_head_kv, n_tokens);
             v_cur = ggml_reshape_3d(ctx0, v_cur, n_embd_head, n_head_kv, n_tokens);
             k_cur = build_norm(k_cur, layer.attn_k_norm, nullptr, LLM_NORM_RMS, il);
@@ -191,6 +197,15 @@ llm_build_dflash_decode::llm_build_dflash_decode(
         ggml_tensor * q_cur = build_lora_mm(layer.wq, cur);
         ggml_tensor * k_cur = build_lora_mm(layer.wk, cur);
         ggml_tensor * v_cur = build_lora_mm(layer.wv, cur);
+        if (layer.bq) {
+            q_cur = ggml_add(ctx0, q_cur, layer.bq);
+        }
+        if (layer.bk) {
+            k_cur = ggml_add(ctx0, k_cur, layer.bk);
+        }
+        if (layer.bv) {
+            v_cur = ggml_add(ctx0, v_cur, layer.bv);
+        }
         q_cur = ggml_reshape_3d(ctx0, q_cur, n_embd_head, n_head, n_tokens);
         k_cur = ggml_reshape_3d(ctx0, k_cur, n_embd_head, n_head_kv, n_tokens);
         v_cur = ggml_reshape_3d(ctx0, v_cur, n_embd_head, n_head_kv, n_tokens);
@@ -207,11 +222,11 @@ llm_build_dflash_decode::llm_build_dflash_decode(
 
         cur = use_iswa
             ? build_attn(
-                    inp_attn_iswa, layer.wo, nullptr,
+                    inp_attn_iswa, layer.wo, layer.bo,
                     q_cur, k_cur, v_cur,
                     nullptr, nullptr, nullptr, kq_scale, il)
             : build_attn(
-                    inp_attn, layer.wo, nullptr,
+                    inp_attn, layer.wo, layer.bo,
                     q_cur, k_cur, v_cur,
                     nullptr, nullptr, nullptr, kq_scale, il);
         ggml_tensor * ffn_inp = ggml_add(ctx0, cur, inp_l);
