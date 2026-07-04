@@ -101,12 +101,15 @@ def normalize_dflash_config(config: dict[str, Any]) -> DFlashConfig:
     if draft_vocab_size <= 0 or draft_vocab_size > input_vocab_size:
         raise ValueError("DFlash draft_vocab_size must be inside the input vocabulary")
 
+    decoder_config = dict(decoder_config)
+    decoder_config["architectures"] = ["Qwen3ForCausalLM"]
+
     return DFlashConfig(
         block_size=block_size,
         mask_token_id=mask_token_id,
         target_layers=[int(layer) + 1 for layer in target_layer_ids],
         draft_vocab_size=draft_vocab_size,
-        decoder_config=dict(decoder_config),
+        decoder_config=decoder_config,
         target_model=target_model,
     )
 

@@ -43,6 +43,7 @@ def test_normalize_zlab_dflash_config():
     assert normalized.target_layers == [2, 10, 18, 26, 34]
     assert normalized.draft_vocab_size == 201088
     assert normalized.decoder_config["hidden_size"] == 2880
+    assert normalized.decoder_config["architectures"] == ["Qwen3ForCausalLM"]
 
 
 def test_normalize_zlab_dflash_tensor_names():
@@ -91,6 +92,7 @@ def test_normalize_speculators_dflash_config():
     assert normalized.target_model == "Qwen/Qwen3-30B-A3B"
     assert normalized.decoder_config["hidden_size"] == 2048
     assert normalized.decoder_config["sliding_window"] == 2048
+    assert normalized.decoder_config["architectures"] == ["Qwen3ForCausalLM"]
     assert converter.dflash_sliding_window_metadata(normalized.decoder_config) == (
         2048,
         [True, True, True, True, True],
