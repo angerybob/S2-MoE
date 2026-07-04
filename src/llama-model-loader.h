@@ -17,6 +17,24 @@
 #include <utility> // for std::pair
 using llama_buf_map = std::unordered_map<uint32_t, ggml_backend_buffer_t>;
 
+struct llama_ssd_registry_record {
+    std::string name;
+    bool resident;
+};
+
+struct llama_ssd_registry_stats {
+    size_t total = 0;
+    size_t resident = 0;
+    size_t cold = 0;
+    size_t requested_hot = 0;
+};
+
+std::set<std::pair<int, int>> llama_parse_hot_experts_json(const std::string & content);
+
+llama_ssd_registry_stats llama_validate_ssd_registry(
+        const std::vector<llama_ssd_registry_record> & records,
+        const std::set<std::pair<int, int>> & hot_experts);
+
 enum llama_fver {
     GGUF_FILE_VERSION_V1 = 1,
     GGUF_FILE_VERSION_V2 = 2,

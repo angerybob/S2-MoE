@@ -6,6 +6,7 @@
 #include <cinttypes>
 #include <cstring>
 #include <future>
+#include <limits>
 #include <thread>
 #include <chrono>
 #include <fstream>
@@ -13,37 +14,114 @@
 #include <regex>
 #include <set>
 
+#include <nlohmann/json.hpp>
+
 // --- INSERT START ---
+
+static bool parse_split_expert_name(
+        const std::string & name,
+        int & layer_id,
+        int & expert_id) {
+    static const std::regex pattern(
+        R"(^blk\.(\d+)\.ffn_(?:gate|up|down)\.(\d+)\.weight$)");
+    std::smatch match;
+    if (!std::regex_match(name, match, pattern)) {
+        return false;
+    }
+    layer_id = std::stoi(match[1].str());
+    expert_id = std::stoi(match[2].str());
+    return true;
+}
+
+std::set<std::pair<int, int>> llama_parse_hot_experts_json(const std::string & content) {
+    try {
+        const nlohmann::json root = nlohmann::json::parse(content);
+        if (!root.is_object() || !root.contains("gpu_experts") ||
+            !root["gpu_experts"].is_array()) {
+            throw std::invalid_argument("hot-expert JSON requires a gpu_experts array");
+        }
+
+        std::set<std::pair<int, int>> result;
+        for (const auto & entry : root["gpu_experts"]) {
+            if (!entry.is_array() || entry.size() != 2 ||
+                !entry[0].is_number_integer() || !entry[1].is_number_integer()) {
+                throw std::invalid_argument(
+                    "each gpu_experts entry must be [layer_id, expert_id]");
+            }
+            const int64_t layer = entry[0].get<int64_t>();
+            const int64_t expert = entry[1].get<int64_t>();
+            if (layer < 0 || expert < 0 ||
+                layer > std::numeric_limits<int>::max() ||
+                expert > std::numeric_limits<int>::max()) {
+                throw std::invalid_argument("hot-expert indices must be non-negative integers");
+            }
+            if (!result.emplace(static_cast<int>(layer), static_cast<int>(expert)).second) {
+                throw std::invalid_argument("hot-expert JSON contains a duplicate entry");
+            }
+        }
+        return result;
+    } catch (const nlohmann::json::exception & error) {
+        throw std::invalid_argument(std::string("invalid hot-expert JSON: ") + error.what());
+    }
+}
+
+llama_ssd_registry_stats llama_validate_ssd_registry(
+        const std::vector<llama_ssd_registry_record> & records,
+        const std::set<std::pair<int, int>> & hot_experts) {
+    llama_ssd_registry_stats stats;
+    std::set<std::string> names;
+    std::set<std::pair<int, int>> seen_hot;
+
+    for (const auto & record : records) {
+        if (!names.insert(record.name).second) {
+            throw std::invalid_argument("SSD registry contains a duplicate key: " + record.name);
+        }
+        int layer = -1;
+        int expert = -1;
+        if (!parse_split_expert_name(record.name, layer, expert)) {
+            throw std::invalid_argument("invalid split-expert registry key: " + record.name);
+        }
+        const bool requested = hot_experts.count({layer, expert}) != 0;
+        if (record.resident != requested) {
+            throw std::invalid_argument(
+                record.resident
+                    ? "cold SSD expert has a resident pointer: " + record.name
+                    : "requested hot expert has no resident pointer: " + record.name);
+        }
+
+        ++stats.total;
+        if (record.resident) {
+            ++stats.resident;
+        } else {
+            ++stats.cold;
+        }
+        if (requested) {
+            ++stats.requested_hot;
+            seen_hot.emplace(layer, expert);
+        }
+    }
+
+    for (const auto & hot : hot_experts) {
+        if (seen_hot.count(hot) == 0) {
+            throw std::invalid_argument(
+                format("requested hot expert [%d, %d] is absent from the SSD registry",
+                    hot.first, hot.second));
+        }
+    }
+    return stats;
+}
 
 void llama_model_loader::load_hot_experts(const char* path) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        LLAMA_LOG_ERROR("%s: failed to open hot experts file: %s\n", __func__, path);
-        return;
+        throw std::runtime_error(format("failed to open hot experts file: %s", path));
     }
 
     std::stringstream buffer;
     buffer << file.rdbuf();
-    std::string content = buffer.str();
-
-    // 目标格式: "gpu_experts": [[35, 0], [34, 90], ...]
-    // 使用简单的正则提取所有 [数字, 数字] 对
-    std::regex re(R"(\[\s*(\d+)\s*,\s*(\d+)\s*\])");
-    std::sregex_iterator next(content.begin(), content.end(), re);
-    std::sregex_iterator end;
-
-    int count = 0;
-    while (next != end) {
-        std::smatch match = *next;
-        int layer_id = std::stoi(match[1].str());
-        int expert_id = std::stoi(match[2].str());
-        
-        hot_expert_indices.insert({layer_id, expert_id});
-        count++;
-        next++;
-    }
-    
-    LLAMA_LOG_INFO("%s: loaded %d hot experts from %s\n", __func__, count, path);
+    hot_expert_indices = llama_parse_hot_experts_json(buffer.str());
+    LLAMA_LOG_INFO("%s: loaded %zu hot experts from %s\n",
+        __func__, hot_expert_indices.size(), path);
 }
 
 static bool is_split_expert_tensor(const std::string & name) {
@@ -1311,39 +1389,8 @@ void llama_model_loader::print_info() const {
 }
 
 bool llama_model_loader::is_tensor_hot(const std::string & name) const {
-    // 1. 检查是否是 split expert
-    // (你可以复用之前的 is_split_expert_tensor 静态函数，或者再写一遍)
-    if (name.find("ffn_") == std::string::npos || name.find(".weight") == std::string::npos) {
-        return false; 
-    }
-
-    // 2. 解析 ID
     int layer_id = -1;
     int expert_id = -1;
-    
-    // 解析 Layer ID ("blk." 和 "." 之间)
-    size_t blk_pos = name.find("blk.");
-    if (blk_pos != std::string::npos) {
-        size_t dot_after_blk = name.find('.', blk_pos + 4);
-        if (dot_after_blk != std::string::npos) {
-            std::string layer_str = name.substr(blk_pos + 4, dot_after_blk - (blk_pos + 4));
-            try { layer_id = std::stoi(layer_str); } catch(...) {}
-        }
-    }
-
-    // 解析 Expert ID (倒数第4个字符开始的3位)
-    size_t weight_pos = name.rfind(".weight");
-    if (weight_pos != std::string::npos && weight_pos >= 4) {
-        std::string id_str = name.substr(weight_pos - 3, 3);
-        try { expert_id = std::stoi(id_str); } catch(...) {}
-    }
-
-    // 3. 查表
-    if (layer_id != -1 && expert_id != -1) {
-        if (hot_expert_indices.count({layer_id, expert_id})) {
-            return true;
-        }
-    }
-    
-    return false;
+    return parse_split_expert_name(name, layer_id, expert_id) &&
+        hot_expert_indices.count({layer_id, expert_id}) != 0;
 }

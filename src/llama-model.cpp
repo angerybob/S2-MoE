@@ -2455,7 +2455,9 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                 }
                 
                 // 4. 注册到 SSD 表
-                pimpl->ssd_experts[name] = info;
+                if (!pimpl->ssd_experts.emplace(name, std::move(info)).second) {
+                    throw std::runtime_error("duplicate SSD expert registry key: " + name);
+                }
             }
         };
         // --- INSERT END ---
@@ -2635,7 +2637,9 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         info.type      = tensor->type;
                         for(int i=0; i<GGML_MAX_DIMS; ++i) info.ne.push_back(tensor->ne[i]);
 
-                        pimpl->ssd_experts[name] = info;
+                        if (!pimpl->ssd_experts.emplace(name, std::move(info)).second) {
+                            throw std::runtime_error("duplicate SSD expert registry key: " + name);
+                        }
 
                         // 5. 显式将 data 设为 nullptr，防止误访问
                         // (虽然 Step B 的 Loader 修改已经跳过了读取，但这里双重保险)
@@ -6940,6 +6944,23 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         LLAMA_LOG_INFO("%s: Updated %d hot expert pointers in SSD registry\n", __func__, updated_count);
     }
     // --- INSERT END ---
+
+    {
+        std::vector<llama_ssd_registry_record> records;
+        records.reserve(pimpl->ssd_experts.size());
+        for (const auto & [name, info] : pimpl->ssd_experts) {
+            records.push_back({name, info.data_ptr != nullptr});
+        }
+        const auto stats = llama_validate_ssd_registry(records, ml.hot_expert_indices);
+        LLAMA_LOG_INFO(
+            "%s: ssd registry: total=%zu resident=%zu cold=%zu requested_hot=%zu\n",
+            __func__,
+            stats.total,
+            stats.resident,
+            stats.cold,
+            stats.requested_hot);
+    }
+
     if (use_mmap_buffer) {
         for (auto & mapping : ml.mappings) {
             pimpl->mappings.emplace_back(std::move(mapping));

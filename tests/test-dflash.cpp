@@ -1,6 +1,7 @@
 #include "llama-arch.h"
 #include "llama-hparams.h"
 #include "llama-model-dflash.h"
+#include "llama-model-loader.h"
 #include "speculative.h"
 
 #include <cstdlib>
@@ -127,4 +128,33 @@ int main() {
         expanded_logits[5] == 4.0f && expanded_logits[7] == 5.0f && expanded_logits[9] == 6.0f,
         "second DFlash logits row was mapped incorrectly");
     require(std::isinf(expanded_logits[1]) && expanded_logits[1] < 0, "unmapped target logit is not -inf");
+
+    const auto hot_experts = llama_parse_hot_experts_json(
+        R"({"gpu_experts": [[0, 1], [1, 3]]})");
+    std::vector<llama_ssd_registry_record> registry;
+    for (int layer = 0; layer < 2; ++layer) {
+        for (int expert = 0; expert < 4; ++expert) {
+            registry.push_back({
+                "blk." + std::to_string(layer) + ".ffn_gate.00" +
+                    std::to_string(expert) + ".weight",
+                hot_experts.count({layer, expert}) != 0,
+            });
+        }
+    }
+    const auto registry_stats = llama_validate_ssd_registry(registry, hot_experts);
+    require(registry_stats.total == 8, "SSD registry total mismatch");
+    require(registry_stats.resident == 2, "SSD resident count mismatch");
+    require(registry_stats.cold == 6, "SSD cold count mismatch");
+    require(registry_stats.requested_hot == 2, "SSD requested-hot count mismatch");
+    require(
+        llama_validate_ssd_registry({}, {}).total == 0,
+        "non-SSD drafter produced registry entries");
+
+    bool invalid_json_rejected = false;
+    try {
+        llama_parse_hot_experts_json(R"({"gpu_experts": [[0, 1, 2]]})");
+    } catch (const std::invalid_argument &) {
+        invalid_json_rejected = true;
+    }
+    require(invalid_json_rejected, "malformed hot-expert JSON was accepted");
 }
