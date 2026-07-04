@@ -362,7 +362,9 @@ void llm_graph_input_attn_kv::set_input(const llama_ubatch * ubatch) {
     mctx->set_input_k_idxs(self_k_idxs, ubatch);
     mctx->set_input_v_idxs(self_v_idxs, ubatch);
 
-    mctx->set_input_kq_mask(self_kq_mask, ubatch, cparams.causal_attn);
+    if (self_kq_mask && self_kq_mask->buffer) {
+        mctx->set_input_kq_mask(self_kq_mask, ubatch, cparams.causal_attn);
+    }
 }
 
 bool llm_graph_input_attn_kv::can_reuse(const llm_graph_params & params) {
@@ -385,12 +387,16 @@ void llm_graph_input_attn_kv_iswa::set_input(const llama_ubatch * ubatch) {
     mctx->get_base()->set_input_k_idxs(self_k_idxs, ubatch);
     mctx->get_base()->set_input_v_idxs(self_v_idxs, ubatch);
 
-    mctx->get_base()->set_input_kq_mask(self_kq_mask, ubatch, cparams.causal_attn);
+    if (self_kq_mask && self_kq_mask->buffer) {
+        mctx->get_base()->set_input_kq_mask(self_kq_mask, ubatch, cparams.causal_attn);
+    }
 
     mctx->get_swa()->set_input_k_idxs(self_k_idxs_swa, ubatch);
     mctx->get_swa()->set_input_v_idxs(self_v_idxs_swa, ubatch);
 
-    mctx->get_swa()->set_input_kq_mask(self_kq_mask_swa, ubatch, cparams.causal_attn);
+    if (self_kq_mask_swa && self_kq_mask_swa->buffer) {
+        mctx->get_swa()->set_input_kq_mask(self_kq_mask_swa, ubatch, cparams.causal_attn);
+    }
 }
 
 bool llm_graph_input_attn_kv_iswa::can_reuse(const llm_graph_params & params) {
@@ -481,6 +487,8 @@ void llm_graph_result::reset() {
     params = {};
 
     inputs.clear();
+    captured_layers.clear();
+    captured_indices.clear();
     moe_layers.clear();
     moe_topk_layers.clear();
     moe_weight_layers.clear();
@@ -759,10 +767,9 @@ void llm_graph_context::capture_eagle3(ggml_tensor * cur, int il) const {
         return;
     }
 
-    static const char * names[] = {"eagle3_extract_0", "eagle3_extract_1", "eagle3_extract_2"};
-    for (size_t i = 0; i < eagle3->extract_layer_indices.size() && i < 3; ++i) {
-        if (eagle3->extract_layer_indices[i] == il) {
-            cb(cur, names[i], il);
+    for (int layer : eagle3->extract_layer_indices) {
+        if (layer == il) {
+            cb(cur, "target_feature_extract", il);
             return;
         }
     }

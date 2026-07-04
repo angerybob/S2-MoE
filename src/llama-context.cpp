@@ -6,6 +6,7 @@
 #include "llama-memory.h"
 #include "llama-mmap.h"
 #include "llama-model.h"
+#include "llama-model-dflash.h"
 #include "ggml.h"
 #include "../ggml/src/ggml-impl.h"
 #ifdef GGML_USE_CUDA
@@ -294,8 +295,20 @@ llama_context::llama_context(
 
         if (cparams.eagle3_extract_enabled) {
             GGML_ASSERT(params.eagle3_model != nullptr);
-            const auto & extract_layers = params.eagle3_model->hparams.eagle3_extract_layers;
-            eagle3.extract_layer_indices.assign(extract_layers.begin(), extract_layers.end());
+            if (params.eagle3_model->arch == LLM_ARCH_DFLASH) {
+                if (params.eagle3_model->hparams.n_embd != model.hparams.n_embd) {
+                    throw std::runtime_error("DFlash and target model hidden sizes must match");
+                }
+                eagle3.extract_layer_indices = params.eagle3_model->dflash_target_layers;
+            } else {
+                const auto & extract_layers = params.eagle3_model->hparams.eagle3_extract_layers;
+                eagle3.extract_layer_indices.assign(extract_layers.begin(), extract_layers.end());
+            }
+            for (int layer : eagle3.extract_layer_indices) {
+                if (layer < 0 || static_cast<uint32_t>(layer) >= model.hparams.n_layer) {
+                    throw std::runtime_error("draft model requests a target feature layer outside the target model");
+                }
+            }
             eagle3.extract_tensors.resize(eagle3.extract_layer_indices.size(), nullptr);
         }
 
@@ -838,9 +851,12 @@ int llama_context::encode(const llama_batch & batch_inp) {
 
     const auto & hparams = model.hparams;
 
-    const int64_t n_embd  = model.arch == LLM_ARCH_EAGLE3 && batch_inp.embd
-        ? 3 * hparams.eagle3_target_hidden_size
-        : hparams.n_embd;
+    int64_t n_embd = hparams.n_embd;
+    if (batch_inp.embd && model.arch == LLM_ARCH_EAGLE3) {
+        n_embd = 3 * hparams.eagle3_target_hidden_size;
+    } else if (batch_inp.embd && model.arch == LLM_ARCH_DFLASH) {
+        n_embd = static_cast<int64_t>(model.dflash_target_layers.size()) * hparams.n_embd;
+    }
     const int64_t n_vocab = model.vocab.n_tokens();
 
     // note: during encode, we always pass the full sequence starting from pos = 0
@@ -923,7 +939,10 @@ int llama_context::encode(const llama_batch & batch_inp) {
                     // extract token embeddings
                     GGML_ASSERT(embd != nullptr);
 
-                    const int64_t output_embd = model.arch == LLM_ARCH_EAGLE3 ? hparams.n_embd : n_embd;
+                    const int64_t output_embd =
+                        model.arch == LLM_ARCH_EAGLE3 || model.arch == LLM_ARCH_DFLASH
+                            ? hparams.n_embd
+                            : n_embd;
                     GGML_ASSERT(n_tokens * output_embd <= (int64_t) embd_size);
                     ggml_backend_tensor_get_async(
                         backend_embd, t_embd, embd, 0, n_tokens * output_embd * sizeof(float));
@@ -999,6 +1018,7 @@ int llama_context::decode(const llama_batch & batch_inp) {
 
     // EAGLE3 SMP: Clear current batch EAGLE hidden states buffer before processing
     current_batch_eagle_hs.clear();
+    eagle3.target_features.clear();
 
     if (!memory) {
         LLAMA_LOG_DEBUG("%s: cannot decode batches with this context (calling encode() instead)\n", __func__);
@@ -1514,7 +1534,7 @@ ggml_cgraph * llama_context::graph_reserve(uint32_t n_tokens, uint32_t n_seqs, u
     auto * res = gf_res_reserve.get();
 
     llm_graph_type gtype = LLM_GRAPH_TYPE_DEFAULT;
-    if (model.arch == LLM_ARCH_EAGLE3) {
+    if (model.arch == LLM_ARCH_EAGLE3 || model.arch == LLM_ARCH_DFLASH) {
         gtype = model.target_tok_embd ? LLM_GRAPH_TYPE_DECODER : LLM_GRAPH_TYPE_ENCODER;
     }
     const auto gparams = graph_params(res, ubatch, mctx, gtype);
@@ -1793,9 +1813,13 @@ llm_graph_cb llama_context::graph_get_cb() const {
             ggml_set_name(cur, name);
         }
 
-        if (cparams.eagle3_extract_enabled && strncmp(name, "eagle3_extract_", 15) == 0) {
-            size_t extract_idx = 0;
-            if (sscanf(name + 15, "%zu", &extract_idx) == 1 && extract_idx < eagle3.extract_tensors.size()) {
+        if (cparams.eagle3_extract_enabled && strcmp(name, "target_feature_extract") == 0) {
+            const auto it = std::find(
+                eagle3.extract_layer_indices.begin(),
+                eagle3.extract_layer_indices.end(),
+                il);
+            if (it != eagle3.extract_layer_indices.end()) {
+                const size_t extract_idx = std::distance(eagle3.extract_layer_indices.begin(), it);
                 ggml_set_output(cur);
                 ggml_backend_sched_set_tensor_backend(sched.get(), cur, backend_cpu);
                 eagle3.extract_tensors[extract_idx] = cur;
@@ -2734,8 +2758,9 @@ llama_context * llama_init_from_model(
         return nullptr;
     }
 
-    if (model->arch == LLM_ARCH_EAGLE3 && params.target_model) {
+    if ((model->arch == LLM_ARCH_EAGLE3 || model->arch == LLM_ARCH_DFLASH) && params.target_model) {
         model->target_tok_embd = params.target_model->tok_embd;
+        model->target_output = params.target_model->output;
     }
 
     try {
@@ -3879,8 +3904,11 @@ void llama_context::extract_eagle3_features(const llama_ubatch & ubatch) {
     const int64_t n_embd = model.hparams.n_embd;
     const size_t n_layers = eagle3.extract_tensors.size();
 
-    eagle3.target_features.resize(static_cast<size_t>(n_tokens) * n_embd * n_layers);
-    std::vector<float> layer_features(static_cast<size_t>(n_tokens) * n_embd);
+    std::vector<std::vector<float>> layer_features(
+        n_layers,
+        std::vector<float>(static_cast<size_t>(n_tokens) * n_embd));
+    std::vector<const float *> layer_data;
+    layer_data.reserve(n_layers);
 
     for (size_t layer_idx = 0; layer_idx < n_layers; ++layer_idx) {
         ggml_tensor * tensor = eagle3.extract_tensors[layer_idx];
@@ -3890,15 +3918,19 @@ void llama_context::extract_eagle3_features(const llama_ubatch & ubatch) {
         ggml_backend_t backend = ggml_backend_sched_get_tensor_backend(sched.get(), tensor);
         GGML_ASSERT(backend != nullptr);
         GGML_UNUSED(backend);
-        ggml_backend_tensor_get(tensor, layer_features.data(), 0, layer_features.size() * sizeof(float));
-
-        for (int64_t token_idx = 0; token_idx < n_tokens; ++token_idx) {
-            const float * src = layer_features.data() + token_idx * n_embd;
-            float * dst = eagle3.target_features.data() +
-                token_idx * n_embd * n_layers + static_cast<int64_t>(layer_idx) * n_embd;
-            std::memcpy(dst, src, static_cast<size_t>(n_embd) * sizeof(float));
-        }
+        ggml_backend_tensor_get(
+            tensor,
+            layer_features[layer_idx].data(),
+            0,
+            layer_features[layer_idx].size() * sizeof(float));
+        layer_data.push_back(layer_features[layer_idx].data());
     }
+
+    dflash_append_target_features(
+        eagle3.target_features,
+        layer_data,
+        static_cast<size_t>(n_tokens),
+        static_cast<size_t>(n_embd));
 }
 
 void llama_context::set_eagle3_g_embeddings(const float * g_embd, int32_t n_embd, int32_t n_tokens) {

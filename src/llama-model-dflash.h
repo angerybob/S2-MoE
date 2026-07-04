@@ -2,10 +2,12 @@
 
 #include "llama-graph.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
 struct llama_model;
+struct llama_hparams;
 
 void dflash_validate_config(
         uint32_t block_size,
@@ -13,6 +15,17 @@ void dflash_validate_config(
         uint32_t vocab_size,
         uint32_t target_layer_count,
         const std::vector<int> & target_layers);
+
+void dflash_append_target_features(
+        std::vector<float> & destination,
+        const std::vector<const float *> & layers,
+        size_t n_tokens,
+        size_t n_embd);
+
+void dflash_configure_swa(
+        llama_hparams & hparams,
+        uint32_t sliding_window,
+        const std::vector<bool> & pattern);
 
 struct llm_build_dflash_encode : public llm_graph_context {
     llm_build_dflash_encode(const llama_model & model, const llm_graph_params & params);

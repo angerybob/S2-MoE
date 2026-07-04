@@ -1,9 +1,11 @@
 #include "llama-model-dflash.h"
 
 #include "llama-kv-cache.h"
+#include "llama-kv-cache-iswa.h"
 #include "llama-model.h"
 
 #include <cmath>
+#include <cstring>
 #include <stdexcept>
 
 void dflash_validate_config(
@@ -25,6 +27,44 @@ void dflash_validate_config(
         if (layer <= 0 || static_cast<uint32_t>(layer) > target_layer_count) {
             throw std::invalid_argument("DFlash target layer is outside the target model");
         }
+    }
+}
+
+void dflash_append_target_features(
+        std::vector<float> & destination,
+        const std::vector<const float *> & layers,
+        size_t n_tokens,
+        size_t n_embd) {
+    const size_t n_layers = layers.size();
+    const size_t old_size = destination.size();
+    destination.resize(old_size + n_tokens * n_layers * n_embd);
+
+    for (size_t token = 0; token < n_tokens; ++token) {
+        for (size_t layer = 0; layer < n_layers; ++layer) {
+            const float * src = layers[layer] + token * n_embd;
+            float * dst = destination.data() + old_size + (token * n_layers + layer) * n_embd;
+            std::memcpy(dst, src, n_embd * sizeof(float));
+        }
+    }
+}
+
+void dflash_configure_swa(
+        llama_hparams & hparams,
+        uint32_t sliding_window,
+        const std::vector<bool> & pattern) {
+    if (sliding_window == 0) {
+        return;
+    }
+    if (pattern.size() != hparams.n_layer) {
+        throw std::invalid_argument("DFlash sliding-window pattern must match the decoder layer count");
+    }
+
+    hparams.n_swa = sliding_window;
+    hparams.swa_type = LLAMA_SWA_TYPE_STANDARD;
+    hparams.rope_freq_base_train_swa = hparams.rope_freq_base_train;
+    hparams.rope_freq_scale_train_swa = hparams.rope_freq_scale_train;
+    for (uint32_t il = 0; il < hparams.n_layer; ++il) {
+        hparams.swa_layers[il] = pattern[il];
     }
 }
 
@@ -58,7 +98,14 @@ llm_build_dflash_decode::llm_build_dflash_decode(
     GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
 
     ggml_tensor * inp_pos = build_inp_pos();
-    auto * inp_attn = build_attn_inp_kv();
+    const bool use_iswa = hparams.swa_type != LLAMA_SWA_TYPE_NONE;
+    llm_graph_input_attn_kv * inp_attn = nullptr;
+    llm_graph_input_attn_kv_iswa * inp_attn_iswa = nullptr;
+    if (use_iswa) {
+        inp_attn_iswa = build_attn_inp_kv_iswa();
+    } else {
+        inp_attn = build_attn_inp_kv();
+    }
     const float kq_scale = 1.0f / std::sqrt(float(n_embd_head));
 
     if (ubatch.embd) {
@@ -80,10 +127,19 @@ llm_build_dflash_decode::llm_build_dflash_decode(
                     ctx0, k_cur, inp_pos, nullptr,
                     n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
                     ext_factor, attn_factor, beta_fast, beta_slow);
-            ggml_build_forward_expand(
-                    gf, inp_attn->mctx->cpy_k(ctx0, k_cur, inp_attn->get_k_idxs(), il));
-            ggml_build_forward_expand(
-                    gf, inp_attn->mctx->cpy_v(ctx0, v_cur, inp_attn->get_v_idxs(), il));
+            if (use_iswa) {
+                const bool is_swa = hparams.is_swa(il);
+                const auto * kv = is_swa ? inp_attn_iswa->mctx->get_swa() : inp_attn_iswa->mctx->get_base();
+                ggml_tensor * k_idxs = is_swa ? inp_attn_iswa->get_k_idxs_swa() : inp_attn_iswa->get_k_idxs();
+                ggml_tensor * v_idxs = is_swa ? inp_attn_iswa->get_v_idxs_swa() : inp_attn_iswa->get_v_idxs();
+                ggml_build_forward_expand(gf, kv->cpy_k(ctx0, k_cur, k_idxs, il));
+                ggml_build_forward_expand(gf, kv->cpy_v(ctx0, v_cur, v_idxs, il));
+            } else {
+                ggml_build_forward_expand(
+                        gf, inp_attn->mctx->cpy_k(ctx0, k_cur, inp_attn->get_k_idxs(), il));
+                ggml_build_forward_expand(
+                        gf, inp_attn->mctx->cpy_v(ctx0, v_cur, inp_attn->get_v_idxs(), il));
+            }
         }
 
         res->t_embd = inp_g;
@@ -121,10 +177,15 @@ llm_build_dflash_decode::llm_build_dflash_decode(
                 n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
                 ext_factor, attn_factor, beta_fast, beta_slow);
 
-        cur = build_attn(
-                inp_attn, layer.wo, nullptr,
-                q_cur, k_cur, v_cur,
-                nullptr, nullptr, nullptr, kq_scale, il);
+        cur = use_iswa
+            ? build_attn(
+                    inp_attn_iswa, layer.wo, nullptr,
+                    q_cur, k_cur, v_cur,
+                    nullptr, nullptr, nullptr, kq_scale, il)
+            : build_attn(
+                    inp_attn, layer.wo, nullptr,
+                    q_cur, k_cur, v_cur,
+                    nullptr, nullptr, nullptr, kq_scale, il);
         ggml_tensor * ffn_inp = ggml_add(ctx0, cur, inp_l);
         cur = build_norm(ffn_inp, layer.ffn_norm, nullptr, LLM_NORM_RMS, il);
         cur = build_ffn(
