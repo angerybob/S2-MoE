@@ -6,6 +6,7 @@
 #include "llama-memory.h"
 #include "llama-mmap.h"
 #include "llama-model.h"
+#include "llama-model-dflash.h"
 #include "ggml.h"
 #include "../ggml/src/ggml-impl.h"
 
@@ -856,8 +857,12 @@ int llama_context::encode(const llama_batch & batch_inp) {
     const auto & hparams = model.hparams;
 
     const int64_t n_embd  = hparams.n_embd;
-    const int64_t n_embd_inp = model.arch == LLM_ARCH_EAGLE && batch_inp.embd != nullptr ?
-        3 * (int64_t) hparams.eagle3_target_hidden_size : n_embd;
+    int64_t n_embd_inp = n_embd;
+    if (batch_inp.embd && model.arch == LLM_ARCH_EAGLE) {
+        n_embd_inp = 3 * (int64_t) hparams.eagle3_target_hidden_size;
+    } else if (batch_inp.embd && model.arch == LLM_ARCH_DFLASH) {
+        n_embd_inp = static_cast<int64_t>(model.dflash_target_layers.size()) * n_embd;
+    }
     const int64_t n_vocab = model.vocab.n_tokens();
 
     // note: during encode, we always pass the full sequence starting from pos = 0
@@ -1491,7 +1496,11 @@ ggml_cgraph * llama_context::graph_reserve(uint32_t n_tokens, uint32_t n_seqs, u
 
     auto * res = gf_res_reserve.get();
 
-    const auto gparams = graph_params(res, ubatch, mctx, LLM_GRAPH_TYPE_DEFAULT);
+    llm_graph_type gtype = LLM_GRAPH_TYPE_DEFAULT;
+    if (model.arch == LLM_ARCH_DFLASH) {
+        gtype = model.target_tok_embd ? LLM_GRAPH_TYPE_DECODER : LLM_GRAPH_TYPE_ENCODER;
+    }
+    const auto gparams = graph_params(res, ubatch, mctx, gtype);
 
     res->reset();
 

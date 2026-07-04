@@ -2145,6 +2145,17 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                 if (hparams.dflash_block_size < 2) {
                     throw std::runtime_error("DFlash block_size must be at least 2");
                 }
+                if (ml.get_key(LLM_KV_ATTENTION_SLIDING_WINDOW, hparams.n_swa, false) &&
+                    hparams.n_swa > 0) {
+                    std::vector<bool> swa_pattern;
+                    if (!ml.get_arr(
+                            dflash_kv(LLM_KV_ATTENTION_SLIDING_WINDOW_PATTERN),
+                            swa_pattern,
+                            false)) {
+                        swa_pattern.assign(hparams.n_layer, true);
+                    }
+                    dflash_configure_swa(hparams, hparams.n_swa, swa_pattern);
+                }
                 type = LLM_TYPE_UNKNOWN;
             } break;
         default: throw std::runtime_error("unsupported model architecture");

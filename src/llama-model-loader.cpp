@@ -331,8 +331,9 @@ namespace GGUFMeta {
                                                 (std::is_same<T,    uint32_t>::value)); break;
             case GGUF_TYPE_FLOAT32: GGML_ASSERT((std::is_same<T,       float>::value)); break;
             case GGUF_TYPE_STRING:  GGML_ASSERT((std::is_same<T, std::string>::value)); break;
+            case GGUF_TYPE_BOOL:    GGML_ASSERT((std::is_same<T,        bool>::value)); break;
             default:
-                throw std::runtime_error(format("%s is not a string/float32/uint32/int32 array", key.c_str()));
+                throw std::runtime_error(format("%s has an unsupported array type", key.c_str()));
         }
 
         if constexpr (std::is_same<T, std::string>::value) {
@@ -354,6 +355,10 @@ namespace GGUFMeta {
     template bool llama_model_loader::get_arr<int32_t>(
             const std::string & key,
             std::vector<int32_t> & result,
+            bool required);
+    template bool llama_model_loader::get_arr<bool>(
+            const std::string & key,
+            std::vector<bool> & result,
             bool required);
 
     template<typename T, size_t N_MAX>

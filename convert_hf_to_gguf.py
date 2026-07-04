@@ -53,6 +53,20 @@ class DFlashConfig:
     target_model: str | None = None
 
 
+def dflash_sliding_window_metadata(config: dict[str, Any]) -> tuple[int, list[bool]] | None:
+    sliding_window = config.get("sliding_window")
+    if sliding_window is None:
+        return None
+
+    n_layers = int(config.get("num_hidden_layers", 0))
+    layer_types = config.get("layer_types")
+    if isinstance(layer_types, list) and len(layer_types) == n_layers:
+        pattern = [layer_type == "sliding_attention" for layer_type in layer_types]
+    else:
+        pattern = [True] * n_layers
+    return int(sliding_window), pattern
+
+
 def normalize_dflash_config(config: dict[str, Any]) -> DFlashConfig:
     dflash_config = config.get("dflash_config")
     decoder_config = config
@@ -3937,6 +3951,10 @@ class DFlashModel(Qwen3Model):
             f"{self.gguf_writer.arch}.draft_vocab_size",
             self.dflash.draft_vocab_size,
         )
+        if sliding_window := dflash_sliding_window_metadata(self.dflash.decoder_config):
+            window, pattern = sliding_window
+            self.gguf_writer.add_sliding_window(window)
+            self.gguf_writer.add_sliding_window_pattern(pattern)
 
         model_path = self.dir_model / "model.safetensors"
         if model_path.exists():

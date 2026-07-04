@@ -75,6 +75,7 @@ def test_normalize_speculators_dflash_config():
         },
         "transformer_layer_config": {
             "hidden_size": 2048,
+            "layer_types": ["sliding_attention"] * 5,
             "num_hidden_layers": 5,
             "sliding_window": 2048,
             "vocab_size": 151936,
@@ -90,6 +91,10 @@ def test_normalize_speculators_dflash_config():
     assert normalized.target_model == "Qwen/Qwen3-30B-A3B"
     assert normalized.decoder_config["hidden_size"] == 2048
     assert normalized.decoder_config["sliding_window"] == 2048
+    assert converter.dflash_sliding_window_metadata(normalized.decoder_config) == (
+        2048,
+        [True, True, True, True, True],
+    )
 
 
 def test_normalize_speculators_dflash_tensor_names():
