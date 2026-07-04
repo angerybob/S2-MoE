@@ -232,6 +232,7 @@ struct common_params_speculative {
     bool accept_log = false;
     bool search_stdin = false;
     bool eagle3 = false;
+    bool dflash = false;
 
     // MoE: utility-driven speculative draft length (Cascade-style test/set, arXiv:2506.20675)
     bool    moe_utility_spec   = false;

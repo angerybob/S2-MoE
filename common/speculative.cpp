@@ -28,7 +28,35 @@ struct common_speculative {
     struct llama_context * eagle3_encoder = nullptr;
     struct llama_context * eagle3_decoder = nullptr;
     int32_t eagle3_n_past = 0;  // number of verified positions in decoder KV cache
+
+    bool dflash = false;
+    llama_batch dflash_batch_inject = {};
+    int32_t dflash_n_past = 0;
+    int32_t dflash_block_size = 0;
+    llama_token dflash_mask_token = -1;
+    int32_t dflash_n_embd_enc = 0;
+    int32_t dflash_n_embd_dec = 0;
 };
+
+void common_speculative_acceptance_metrics::add(uint32_t accepted, uint32_t drafted) {
+    accepted = std::min(accepted, drafted);
+    ++proposals;
+    accepted_tokens += accepted;
+    accepted_by_position.resize(std::max<size_t>(accepted_by_position.size(), drafted), 0);
+    for (uint32_t position = 0; position < accepted; ++position) {
+        ++accepted_by_position[position];
+    }
+}
+
+double common_speculative_acceptance_metrics::mean_accepted_length() const {
+    return proposals > 0 ? static_cast<double>(accepted_tokens) / proposals : 0.0;
+}
+
+double common_speculative_acceptance_metrics::position_acceptance(size_t position) const {
+    return proposals > 0 && position < accepted_by_position.size()
+        ? static_cast<double>(accepted_by_position[position]) / proposals
+        : 0.0;
+}
 
 struct common_speculative * common_speculative_init(
         struct llama_context * ctx_tgt,
@@ -109,6 +137,40 @@ struct common_speculative * common_speculative_init_eagle3(
     return result;
 }
 
+struct common_speculative * common_speculative_init_dflash(
+        struct llama_context * ctx_tgt,
+        struct llama_context * ctx_dft) {
+    auto * result = common_speculative_init(ctx_tgt, ctx_dft);
+    const llama_model * model_dft = llama_get_model(ctx_dft);
+    const llama_model * model_tgt = llama_get_model(ctx_tgt);
+
+    result->dflash = true;
+    result->dflash_block_size = llama_model_dflash_block_size(model_dft);
+    result->dflash_mask_token = llama_model_dflash_mask_token(model_dft);
+    result->dflash_n_embd_dec = llama_model_n_embd(model_dft);
+    result->dflash_n_embd_enc =
+        llama_model_n_embd(model_tgt) *
+        static_cast<int32_t>(llama_model_dflash_target_layer_count(model_dft));
+
+    GGML_ASSERT(result->dflash_block_size >= 2);
+    GGML_ASSERT(result->dflash_mask_token >= 0);
+    GGML_ASSERT(result->dflash_n_embd_enc > 0);
+
+    result->dflash_batch_inject = llama_batch_init(
+        llama_n_batch(ctx_dft),
+        result->dflash_n_embd_dec,
+        1);
+
+    common_sampler_free(result->smpl);
+    common_params_sampling params;
+    params.no_perf = false;
+    params.top_k = 1;
+    params.samplers = {COMMON_SAMPLER_TYPE_TOP_K};
+    result->smpl = common_sampler_init(model_dft, params);
+
+    return result;
+}
+
 void common_speculative_free(struct common_speculative * spec) {
     if (spec == nullptr) {
         return;
@@ -117,6 +179,9 @@ void common_speculative_free(struct common_speculative * spec) {
     common_sampler_free(spec->smpl);
 
     llama_batch_free(spec->batch);
+    if (spec->dflash) {
+        llama_batch_free(spec->dflash_batch_inject);
+    }
 
     delete spec;
 }
@@ -372,6 +437,99 @@ static llama_tokens gen_eagle3_draft(
     return result;
 }
 
+static llama_tokens gen_dflash_draft(
+        common_speculative * spec,
+        common_speculative_params params,
+        const llama_tokens & prompt_tgt,
+        llama_token id_last) {
+    llama_context * ctx_tgt = spec->ctx_tgt;
+    llama_context * ctx_dft = spec->ctx_dft;
+    llama_memory_t mem_dft = llama_get_memory(ctx_dft);
+
+    const int32_t n = static_cast<int32_t>(prompt_tgt.size());
+    const int32_t n_new = n - spec->dflash_n_past;
+    GGML_ASSERT(n_new >= 0);
+
+    // Remove the previous noise block and any rejected suffix before committing
+    // the newly verified target positions.
+    llama_memory_seq_rm(mem_dft, 0, spec->dflash_n_past, -1);
+
+    if (n_new > 0) {
+        const float * features = llama_get_eagle3_target_features(ctx_tgt);
+        GGML_ASSERT(features && "DFlash target features are not available");
+
+        const int32_t n_ubatch = static_cast<int32_t>(llama_n_ubatch(ctx_dft));
+        for (int32_t offset = 0; offset < n_new; offset += n_ubatch) {
+            const int32_t n_chunk = std::min(n_ubatch, n_new - offset);
+            llama_batch enc_batch = {
+                /*.n_tokens  =*/ n_chunk,
+                /*.token     =*/ nullptr,
+                /*.embd      =*/ const_cast<float *>(
+                    features + static_cast<size_t>(offset) * spec->dflash_n_embd_enc),
+                /*.pos       =*/ nullptr,
+                /*.n_seq_id  =*/ nullptr,
+                /*.seq_id    =*/ nullptr,
+                /*.logits    =*/ nullptr,
+            };
+            GGML_ASSERT(llama_encode(ctx_dft, enc_batch) == 0);
+
+            const float * g_embd = llama_get_embeddings(ctx_dft);
+            GGML_ASSERT(g_embd && "DFlash encoder produced no output");
+
+            llama_batch & inject = spec->dflash_batch_inject;
+            inject.n_tokens = n_chunk;
+            std::memcpy(
+                inject.embd,
+                g_embd,
+                static_cast<size_t>(n_chunk) * spec->dflash_n_embd_dec * sizeof(float));
+            for (int32_t i = 0; i < n_chunk; ++i) {
+                inject.pos[i] = spec->dflash_n_past + offset + i;
+                inject.n_seq_id[i] = 1;
+                inject.seq_id[i][0] = 0;
+                inject.logits[i] = false;
+            }
+            GGML_ASSERT(llama_decode(ctx_dft, inject) == 0);
+        }
+    }
+    spec->dflash_n_past = n;
+
+    const int32_t n_draft = std::max(
+        0,
+        std::min(params.n_draft, spec->dflash_block_size - 1));
+    if (n_draft == 0) {
+        return {};
+    }
+
+    llama_batch & batch = spec->batch;
+    common_batch_clear(batch);
+    common_batch_add(batch, id_last, n, {0}, true);
+    for (int32_t i = 0; i < n_draft; ++i) {
+        common_batch_add(batch, spec->dflash_mask_token, n + i + 1, {0}, true);
+    }
+    GGML_ASSERT(llama_decode(ctx_dft, batch) == 0);
+
+    llama_tokens result;
+    result.reserve(n_draft);
+    common_sampler_reset(spec->smpl);
+    for (int32_t i = 1; i <= n_draft; ++i) {
+        common_sampler_sample(spec->smpl, ctx_dft, i);
+        const llama_token_data_array * candidates =
+            common_sampler_get_candidates(spec->smpl, true);
+        GGML_ASSERT(candidates->size > 0);
+
+        const llama_token id = candidates->data[0].id;
+        const float probability = candidates->data[0].p;
+        common_sampler_accept(spec->smpl, id, true);
+        result.push_back(id);
+
+        if (!std::isfinite(probability) || probability < params.p_min) {
+            break;
+        }
+    }
+
+    return result;
+}
+
 llama_tokens common_speculative_gen_draft(
         struct common_speculative * spec,
         struct common_speculative_params params,
@@ -381,6 +539,9 @@ llama_tokens common_speculative_gen_draft(
     // EAGLE3 path
     if (spec->eagle3_encoder && spec->eagle3_decoder) {
         return gen_eagle3_draft(spec, params, prompt_tgt_main_model, id_last);
+    }
+    if (spec->dflash) {
+        return gen_dflash_draft(spec, params, prompt_tgt_main_model, id_last);
     }
 
     // Standard draft model path
@@ -556,4 +717,3 @@ llama_tokens common_speculative_gen_draft(
     }
     return result;
 }
-

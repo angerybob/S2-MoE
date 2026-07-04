@@ -217,17 +217,20 @@ int main(int argc, char ** argv) {
     common_init_result init_tgt;
     common_init_result init_dft;
 
-    // For EAGLE3: load both draft model and target model
-    if (params.speculative.eagle3) {
+    const bool native_draft = params.speculative.eagle3 || params.speculative.dflash;
+
+    // Native EAGLE3/DFlash paths load the draft model first so the target
+    // context can enable its requested feature extraction layers.
+    if (native_draft) {
         llama_model_params dft_mp = llama_model_default_params();
         dft_mp.n_gpu_layers = params.speculative.n_gpu_layers;
-        // EAGLE3 draft does not use SSD offloading
+        // Draft models must never enter the target SSD expert registry.
         dft_mp.use_ssd_moe = false;
         dft_mp.hot_experts_path = nullptr;
         dft_mp.use_mmap = params.use_mmap;
         model_dft = llama_model_load_from_file(params.speculative.model.path.c_str(), dft_mp);
         if (!model_dft) {
-            LOG_ERR("failed to load EAGLE3 draft model\n");
+            LOG_ERR("failed to load native draft model\n");
             return 1;
         }
 
@@ -245,6 +248,10 @@ int main(int argc, char ** argv) {
         llama_context_params tcp = common_context_params_to_llama(params);
         tcp.eagle3_model = model_dft;  // Enable feature extraction
         ctx_tgt = llama_init_from_model(model_tgt, tcp);
+        if (!ctx_tgt) {
+            LOG_ERR("failed to create target context with draft feature extraction\n");
+            return 1;
+        }
     } else {
         // Standard load the target model
         init_tgt = common_init_from_params(params);
@@ -294,6 +301,27 @@ int main(int argc, char ** argv) {
             LOG_ERR("failed to create EAGLE3 decoder context\n");
             return 1;
         }
+    } else if (params.speculative.dflash) {
+        const int32_t block_size = llama_model_dflash_block_size(model_dft);
+        if (block_size < 2) {
+            LOG_ERR("draft model is not a valid DFlash model\n");
+            return 1;
+        }
+        if (params.speculative.n_max > block_size - 1) {
+            LOG_WRN("requested %d draft tokens exceeds DFlash block capacity; clamping to %d\n",
+                    params.speculative.n_max, block_size - 1);
+            params.speculative.n_max = block_size - 1;
+        }
+
+        llama_context_params dflash_params = common_context_params_to_llama(params);
+        dflash_params.target_model = model_tgt;
+        dflash_params.embeddings = true;
+        dflash_params.attention_type = LLAMA_ATTENTION_TYPE_NON_CAUSAL;
+        ctx_dft = llama_init_from_model(model_dft, dflash_params);
+        if (!ctx_dft) {
+            LOG_ERR("failed to create DFlash context\n");
+            return 1;
+        }
     } else {
         // Standard: load draft model context
         init_dft = common_init_from_params(params);
@@ -324,6 +352,7 @@ int main(int argc, char ** argv) {
     long long total_n_predict = 0;
     long long total_n_drafted = 0;
     long long total_n_accept = 0;
+    common_speculative_acceptance_metrics total_acceptance_metrics;
     int processed_count = 0;
     int question_idx = 0;
 
@@ -382,8 +411,8 @@ int main(int argc, char ** argv) {
             inputs.parallel_tool_calls = false;
 
             prompt = common_chat_templates_apply(chat_templates.get(), inputs).prompt;
-            if (params.speculative.eagle3) {
-                LOG_INF("%s: EAGLE3 chat template applied\n", __func__);
+            if (native_draft) {
+                LOG_INF("%s: native draft chat template applied\n", __func__);
             }
         }
 
@@ -429,6 +458,7 @@ int main(int argc, char ** argv) {
         int n_predict = 0;
         int n_drafted = 0;
         int n_accept  = 0;
+        common_speculative_acceptance_metrics acceptance_metrics;
 
         // used to determine end of generation
         bool has_eos = false;
@@ -457,6 +487,18 @@ int main(int argc, char ** argv) {
             prompt_tgt.reserve(llama_n_ctx(ctx_tgt));
 
             n_past = inp.size();
+        } else if (params.speculative.dflash) {
+            // DFlash also needs target features for every prompt position.
+            llama_decode(ctx_tgt, llama_batch_get_one(inp.data(), inp.size()));
+
+            id_last = common_sampler_sample(smpl, ctx_tgt, -1);
+            common_sampler_accept(smpl, id_last, true);
+            LOG("%s", common_token_to_piece(ctx_tgt, id_last).c_str());
+            n_predict++;
+
+            prompt_tgt.assign(inp.begin(), inp.end());
+            prompt_tgt.reserve(llama_n_ctx(ctx_tgt));
+            n_past = inp.size();
         } else {
             llama_decode(ctx_tgt, llama_batch_get_one(inp.data(), inp.size() - 1));
 
@@ -478,6 +520,8 @@ int main(int argc, char ** argv) {
 
         if (params.speculative.eagle3) {
             spec = common_speculative_init_eagle3(ctx_tgt, ctx_encoder, ctx_decoder);
+        } else if (params.speculative.dflash) {
+            spec = common_speculative_init_dflash(ctx_tgt, ctx_dft);
         } else {
             params_spec.n_reuse = llama_n_ctx(ctx_dft) - n_draft_cap;
             spec = common_speculative_init(ctx_tgt, ctx_dft);
@@ -500,7 +544,7 @@ int main(int argc, char ** argv) {
             cascade.on_outer_iter_start(n_predict, n_predict_mark);
             const int n_draft_active = cascade.enabled ? cascade.active_k() : n_draft_cap;
             params_spec.n_draft = n_draft_active;
-            if (!params.speculative.eagle3 && ctx_dft) {
+            if (!native_draft && ctx_dft) {
                 params_spec.n_reuse = llama_n_ctx(ctx_dft) - n_draft_active;
             }
 
@@ -556,6 +600,8 @@ int main(int argc, char ** argv) {
         n_drafted += draft.size(); // note: we ignore the discarded small drafts
         n_accept  += ids.size() - 1;
         n_predict += ids.size();
+        acceptance_metrics.add(ids.size() - 1, draft.size());
+        total_acceptance_metrics.add(ids.size() - 1, draft.size());
 
         // process the accepted tokens and update contexts
         //
@@ -608,7 +654,10 @@ int main(int argc, char ** argv) {
         LOG_INF("n_predict = %d\n", n_predict);
         LOG_INF("n_drafted = %d\n", n_drafted);
         LOG_INF("n_accept  = %d\n", n_accept);
-        LOG_INF("accept    = %.3f%%\n", 100.0f * n_accept / n_drafted);
+        LOG_INF("accept    = %.3f%%\n", n_drafted > 0 ? 100.0f * n_accept / n_drafted : 0.0f);
+        LOG_INF("mean accepted draft length = %.3f\n", acceptance_metrics.mean_accepted_length());
+        LOG_INF("first draft position acceptance = %.3f%%\n",
+                100.0 * acceptance_metrics.position_acceptance(0));
 
         LOG_INF("\n");
         LOG_INF("draft:\n\n");
@@ -662,12 +711,22 @@ int main(int argc, char ** argv) {
         LOG_INF("Total Accepted:        %lld\n", total_n_accept);
         LOG_INF("Overall Accept Rate:   %.3f%%\n", avg_accept_rate);
         LOG_INF("Overall Acceptance Length: %.3f drafted tokens accepted per non-accepted token\n", overall_acceptance_length);
+        LOG_INF("Mean Accepted Draft Length: %.3f\n", total_acceptance_metrics.mean_accepted_length());
+        LOG_INF("First Draft Position Acceptance: %.3f%%\n",
+                100.0 * total_acceptance_metrics.position_acceptance(0));
     }
     LOG("==========================================================\n\n");
 
-    if (params.speculative.eagle3) {
-        llama_free(ctx_decoder);
-        llama_free(ctx_encoder);
+    if (native_draft) {
+        if (ctx_decoder) {
+            llama_free(ctx_decoder);
+        }
+        if (ctx_encoder) {
+            llama_free(ctx_encoder);
+        }
+        if (ctx_dft) {
+            llama_free(ctx_dft);
+        }
         llama_free(ctx_tgt);
         llama_model_free(model_tgt);
         llama_model_free(model_dft);

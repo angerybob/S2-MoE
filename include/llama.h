@@ -565,6 +565,10 @@ extern "C" {
     // Returns the total number of parameters in the model
     LLAMA_API uint64_t llama_model_n_params(const struct llama_model * model);
 
+    LLAMA_API int32_t llama_model_dflash_block_size(const struct llama_model * model);
+    LLAMA_API llama_token llama_model_dflash_mask_token(const struct llama_model * model);
+    LLAMA_API uint32_t llama_model_dflash_target_layer_count(const struct llama_model * model);
+
     // Returns true if the model contains an encoder that requires llama_encode() call
     LLAMA_API bool llama_model_has_encoder(const struct llama_model * model);
 

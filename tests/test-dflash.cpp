@@ -1,8 +1,10 @@
 #include "llama-arch.h"
 #include "llama-hparams.h"
 #include "llama-model-dflash.h"
+#include "speculative.h"
 
 #include <cstdlib>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -95,4 +97,34 @@ int main() {
     for (uint32_t il = 0; il < hparams.n_layer; ++il) {
         require(hparams.is_swa(il), "DFlash sliding layer pattern mismatch");
     }
+
+    common_speculative_acceptance_metrics metrics;
+    metrics.add(3, 3);
+    metrics.add(2, 3);
+    metrics.add(0, 3);
+    metrics.add(1, 3);
+    require(metrics.proposals == 4, "proposal count mismatch");
+    require(metrics.accepted_tokens == 6, "accepted-token count mismatch");
+    require(metrics.mean_accepted_length() == 1.5, "mean accepted length mismatch");
+    require(metrics.position_acceptance(0) == 0.75, "first-position acceptance mismatch");
+    require(metrics.position_acceptance(1) == 0.50, "second-position acceptance mismatch");
+    require(metrics.position_acceptance(2) == 0.25, "third-position acceptance mismatch");
+
+    std::vector<float> expanded_logits;
+    dflash_expand_logits(
+        expanded_logits,
+        {
+            1.0f, 2.0f, 3.0f,
+            4.0f, 5.0f, 6.0f,
+        },
+        {0, 1, 2},
+        /* target_vocab_size = */ 5);
+    require(expanded_logits.size() == 10, "expanded DFlash logits size mismatch");
+    require(
+        expanded_logits[0] == 1.0f && expanded_logits[2] == 2.0f && expanded_logits[4] == 3.0f,
+        "first DFlash logits row was mapped incorrectly");
+    require(
+        expanded_logits[5] == 4.0f && expanded_logits[7] == 5.0f && expanded_logits[9] == 6.0f,
+        "second DFlash logits row was mapped incorrectly");
+    require(std::isinf(expanded_logits[1]) && expanded_logits[1] < 0, "unmapped target logit is not -inf");
 }
