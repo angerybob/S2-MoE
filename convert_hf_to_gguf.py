@@ -55,10 +55,25 @@ class DFlashConfig:
 
 def normalize_dflash_config(config: dict[str, Any]) -> DFlashConfig:
     dflash_config = config.get("dflash_config")
-    if not isinstance(dflash_config, dict):
-        raise ValueError("DFlash config requires a dflash_config object")
+    decoder_config = config
+    target_model = None
+    if isinstance(dflash_config, dict):
+        target_layer_ids = dflash_config.get("target_layer_ids")
+        mask_token_id = int(dflash_config.get("mask_token_id", -1))
+        draft_vocab_size = int(config.get("vocab_size", 0))
+    else:
+        decoder_config = config.get("transformer_layer_config")
+        if not isinstance(decoder_config, dict):
+            raise ValueError(
+                "DFlash config requires dflash_config or transformer_layer_config"
+            )
+        target_layer_ids = config.get("aux_hidden_state_layer_ids")
+        mask_token_id = int(config.get("mask_token_id", -1))
+        draft_vocab_size = int(config.get("draft_vocab_size", 0))
+        speculators_config = config.get("speculators_config", {})
+        verifier = speculators_config.get("verifier", {}) if isinstance(speculators_config, dict) else {}
+        target_model = verifier.get("name_or_path") if isinstance(verifier, dict) else None
 
-    target_layer_ids = dflash_config.get("target_layer_ids")
     if not isinstance(target_layer_ids, list) or not target_layer_ids:
         raise ValueError("DFlash config requires non-empty target_layer_ids")
 
@@ -66,27 +81,42 @@ def normalize_dflash_config(config: dict[str, Any]) -> DFlashConfig:
     if block_size < 2:
         raise ValueError("DFlash block_size must be at least 2")
 
-    mask_token_id = int(dflash_config.get("mask_token_id", -1))
-    vocab_size = int(config.get("vocab_size", 0))
-    if mask_token_id < 0 or mask_token_id >= vocab_size:
-        raise ValueError("DFlash mask_token_id must be inside the draft vocabulary")
+    input_vocab_size = int(decoder_config.get("vocab_size", 0))
+    if mask_token_id < 0 or mask_token_id >= input_vocab_size:
+        raise ValueError("DFlash mask_token_id must be inside the input vocabulary")
+    if draft_vocab_size <= 0 or draft_vocab_size > input_vocab_size:
+        raise ValueError("DFlash draft_vocab_size must be inside the input vocabulary")
 
     return DFlashConfig(
         block_size=block_size,
         mask_token_id=mask_token_id,
         target_layers=[int(layer) + 1 for layer in target_layer_ids],
-        draft_vocab_size=vocab_size,
-        decoder_config=dict(config),
+        draft_vocab_size=draft_vocab_size,
+        decoder_config=dict(decoder_config),
+        target_model=target_model,
     )
 
 
-def normalize_dflash_tensor_name(name: str) -> str:
+def normalize_dflash_tensor_name(name: str) -> str | None:
+    if name == "d2t":
+        return "d2t"
+    if name == "t2d":
+        return None
+    if name == "embed_tokens.weight":
+        return "token_embd.weight"
+    if name == "lm_head.weight":
+        return "output.weight"
+    if name == "norm.weight":
+        return "output_norm.weight"
     if name == "fc.weight":
         return "fc.weight"
     if name == "hidden_norm.weight":
         return "enc.output_norm.weight"
     if name == "model.norm.weight":
         return "output_norm.weight"
+
+    if name.startswith("layers."):
+        name = "model." + name
 
     match = re.fullmatch(r"model\.layers\.(\d+)\.(.+)\.weight", name)
     if match is None:
@@ -152,6 +182,7 @@ class ModelBase:
     metadata_override: Path | None
     dir_model_card: Path
     remote_hf_model_id: str | None
+    target_model_dir: Path | None = None
 
     # subclasses should define this!
     model_arch: gguf.MODEL_ARCH
@@ -3870,6 +3901,12 @@ class Qwen3Model(Qwen2Model):
 class DFlashModel(Qwen3Model):
     model_arch = gguf.MODEL_ARCH.DFLASH
 
+    def __init__(self, *args, **kwargs):
+        raw_hparams = ModelBase.load_hparams(Path(args[0]), False)
+        self.dflash = normalize_dflash_config(raw_hparams)
+        kwargs["hparams"] = self.dflash.decoder_config
+        super().__init__(*args, **kwargs)
+
     def set_vocab(self):
         if self.target_model_dir is None:
             raise ValueError(
@@ -3884,25 +3921,51 @@ class DFlashModel(Qwen3Model):
 
     def set_gguf_parameters(self):
         super().set_gguf_parameters()
-        normalized = normalize_dflash_config(self.hparams)
         self.gguf_writer.add_uint32(
             f"{self.gguf_writer.arch}.block_size",
-            normalized.block_size,
+            self.dflash.block_size,
         )
         self.gguf_writer.add_uint32(
             f"{self.gguf_writer.arch}.mask_token_id",
-            normalized.mask_token_id,
+            self.dflash.mask_token_id,
         )
         self.gguf_writer.add_array(
             f"{self.gguf_writer.arch}.target_layers",
-            normalized.target_layers,
+            self.dflash.target_layers,
+        )
+        self.gguf_writer.add_uint32(
+            f"{self.gguf_writer.arch}.draft_vocab_size",
+            self.dflash.draft_vocab_size,
         )
 
+        model_path = self.dir_model / "model.safetensors"
+        if model_path.exists():
+            from safetensors import safe_open
+            with safe_open(model_path, framework="pt", device="cpu") as model_file:
+                if "d2t" in model_file.keys():
+                    d2t = model_file.get_tensor("d2t").to(torch.int32).tolist()
+                    if len(d2t) != self.dflash.draft_vocab_size:
+                        raise ValueError(
+                            f"DFlash d2t length {len(d2t)} does not match "
+                            f"draft_vocab_size {self.dflash.draft_vocab_size}"
+                        )
+                    self.gguf_writer.add_eagle_d2t_map(d2t)
+
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        if name in ("d2t", "t2d"):
+            return []
         if name == "fc.weight":
             return [(normalize_dflash_tensor_name(name), data_torch)]
         if name == "hidden_norm.weight":
             return [(normalize_dflash_tensor_name(name), data_torch)]
+        if name == "lm_head.weight":
+            return [("output.weight", data_torch)]
+        if name == "embed_tokens.weight":
+            return [("token_embd.weight", data_torch)]
+        if name == "norm.weight":
+            name = "model.norm.weight"
+        elif name.startswith("layers."):
+            name = "model." + name
         if not name.startswith("model."):
             name = "model." + name
         return super().modify_tensors(data_torch, name, bid)
@@ -9499,6 +9562,10 @@ def parse_args() -> argparse.Namespace:
         help="name of the model",
     )
     parser.add_argument(
+        "--target-model-dir", type=Path,
+        help="matching target model directory used for DFlash tokenizer metadata",
+    )
+    parser.add_argument(
         "--verbose", action="store_true",
         help="increase output verbosity",
     )
@@ -9680,6 +9747,7 @@ def main() -> None:
                                      small_first_shard=args.no_tensor_first_split,
                                      remote_hf_model_id=hf_repo_id, disable_mistral_community_chat_template=disable_mistral_community_chat_template
                                      )
+        model_instance.target_model_dir = args.target_model_dir
 
         if args.vocab_only:
             logger.info("Exporting model vocab...")
