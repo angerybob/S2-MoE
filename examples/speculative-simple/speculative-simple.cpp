@@ -259,9 +259,11 @@ int main(int argc, char ** argv) {
         ctx_tgt   = init_tgt.context.get();
     }
 
-    // force a known chat template unless user already specified one
-    if (params.chat_template.empty() || params.chat_template == "auto") {
-        params.chat_template = "chatml";
+    // "auto" means use the target model's native template. This matters for
+    // Harmony/GPT-OSS; forcing ChatML makes the drafter operate far outside
+    // the distribution it was trained on.
+    if (params.chat_template == "auto") {
+        params.chat_template.clear();
     }
     params.enable_chat_template = true;
 
