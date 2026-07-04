@@ -103,6 +103,7 @@ static const std::map<llm_arch, const char *> LLM_ARCH_NAMES = {
     { LLM_ARCH_APERTUS,          "apertus"          },
     { LLM_ARCH_EAGLE,            "eagle3-draft"     },
     { LLM_ARCH_EAGLE3,           "eagle3"           },
+    { LLM_ARCH_DFLASH,           "dflash"           },
     { LLM_ARCH_UNKNOWN,          "(unknown)"        },
 };
 
@@ -277,6 +278,9 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
     { LLM_KV_EAGLE_T2D_MAP,        "eagle.t2d_map"        },
     { LLM_KV_EAGLE3_EXTRACT_LAYERS,     "%s.extract_layers"     },
     { LLM_KV_EAGLE3_TARGET_HIDDEN_SIZE, "%s.target_hidden_size" },
+    { LLM_KV_DFLASH_BLOCK_SIZE,          "%s.block_size"         },
+    { LLM_KV_DFLASH_MASK_TOKEN_ID,       "%s.mask_token_id"      },
+    { LLM_KV_DFLASH_TARGET_LAYERS,       "%s.target_layers"      },
 };
 
 static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_NAMES = {
