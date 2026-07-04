@@ -78,6 +78,10 @@ def test_normalize_speculators_dflash_config():
             "hidden_size": 2048,
             "layer_types": ["sliding_attention"] * 5,
             "num_hidden_layers": 5,
+            "rope_parameters": {
+                "rope_theta": 1_000_000,
+                "rope_type": "default",
+            },
             "sliding_window": 2048,
             "vocab_size": 151936,
         },
@@ -87,10 +91,14 @@ def test_normalize_speculators_dflash_config():
 
     assert normalized.block_size == 8
     assert normalized.mask_token_id == 151669
-    assert normalized.target_layers == [2, 13, 24, 35, 46]
+    # Speculators stores the verifier extraction indices directly.  Unlike the
+    # older Z-Lab target_layer_ids, these have already had the hidden-state
+    # tuple offset applied.
+    assert normalized.target_layers == [1, 12, 23, 34, 45]
     assert normalized.draft_vocab_size == 32000
     assert normalized.target_model == "Qwen/Qwen3-30B-A3B"
     assert normalized.decoder_config["hidden_size"] == 2048
+    assert normalized.decoder_config["rope_theta"] == 1_000_000
     assert normalized.decoder_config["sliding_window"] == 2048
     assert normalized.decoder_config["architectures"] == ["Qwen3ForCausalLM"]
     assert converter.dflash_sliding_window_metadata(normalized.decoder_config) == (

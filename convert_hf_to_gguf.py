@@ -73,6 +73,9 @@ def normalize_dflash_config(config: dict[str, Any]) -> DFlashConfig:
     target_model = None
     if isinstance(dflash_config, dict):
         target_layer_ids = dflash_config.get("target_layer_ids")
+        # Z-Lab indexes transformer layers, while llama.cpp captures entries
+        # from the hidden-state tuple where index 0 is the embedding output.
+        target_layers = [int(layer) + 1 for layer in target_layer_ids] if isinstance(target_layer_ids, list) else []
         mask_token_id = int(dflash_config.get("mask_token_id", -1))
         draft_vocab_size = int(config.get("vocab_size", 0))
     else:
@@ -82,6 +85,9 @@ def normalize_dflash_config(config: dict[str, Any]) -> DFlashConfig:
                 "DFlash config requires dflash_config or transformer_layer_config"
             )
         target_layer_ids = config.get("aux_hidden_state_layer_ids")
+        # Native Speculators checkpoints already store hidden-state tuple
+        # indices, so applying the Z-Lab offset here would select later layers.
+        target_layers = [int(layer) for layer in target_layer_ids] if isinstance(target_layer_ids, list) else []
         mask_token_id = int(config.get("mask_token_id", -1))
         draft_vocab_size = int(config.get("draft_vocab_size", 0))
         speculators_config = config.get("speculators_config", {})
@@ -102,12 +108,22 @@ def normalize_dflash_config(config: dict[str, Any]) -> DFlashConfig:
         raise ValueError("DFlash draft_vocab_size must be inside the input vocabulary")
 
     decoder_config = dict(decoder_config)
+    rope_parameters = decoder_config.get("rope_parameters")
+    if (
+        "rope_theta" not in decoder_config
+        and isinstance(rope_parameters, dict)
+        and rope_parameters.get("rope_theta") is not None
+    ):
+        # Transformers 4.57 serializes the Qwen/Llama RoPE base in the nested
+        # rope_parameters object.  llama.cpp's Qwen converter still consumes
+        # the legacy top-level key.
+        decoder_config["rope_theta"] = rope_parameters["rope_theta"]
     decoder_config["architectures"] = ["Qwen3ForCausalLM"]
 
     return DFlashConfig(
         block_size=block_size,
         mask_token_id=mask_token_id,
-        target_layers=[int(layer) + 1 for layer in target_layer_ids],
+        target_layers=target_layers,
         draft_vocab_size=draft_vocab_size,
         decoder_config=decoder_config,
         target_model=target_model,
@@ -3990,7 +4006,6 @@ class DFlashModel(Qwen3Model):
         if not name.startswith("model."):
             name = "model." + name
         return super().modify_tensors(data_torch, name, bid)
-
 
 @ModelBase.register("Qwen3MoeForCausalLM")
 class Qwen3MoeModel(Qwen2MoeModel):
