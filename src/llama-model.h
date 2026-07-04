@@ -459,6 +459,13 @@ struct llama_model {
     struct ggml_tensor * output_b        = nullptr;
     struct ggml_tensor * output_norm_enc = nullptr;
 
+    struct ggml_tensor * fc              = nullptr;
+    struct ggml_tensor * d2t             = nullptr;
+    struct ggml_tensor * target_tok_embd = nullptr;
+    struct ggml_tensor * target_output   = nullptr;
+
+    std::vector<int> dflash_target_layers;
+
     // classifier
     struct ggml_tensor * cls       = nullptr;
     struct ggml_tensor * cls_b     = nullptr;

@@ -183,6 +183,9 @@ struct llama_hparams {
     uint32_t eagle3_target_hidden_size = 0;
     bool eagle3_norm_before_fc = false;
 
+    uint32_t dflash_block_size = 0;
+    uint32_t dflash_mask_token_id = 0;
+
     // needed by encoder-decoder models (e.g. T5, FLAN-T5)
     // ref: https://github.com/ggerganov/llama.cpp/pull/8141
     llama_token dec_start_token_id = LLAMA_TOKEN_NULL;

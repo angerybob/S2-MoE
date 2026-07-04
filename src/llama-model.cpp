@@ -5,6 +5,7 @@
 #include "llama-batch.h"
 #include "llama-cparams.h"
 #include "llama-model-loader.h"
+#include "llama-model-dflash.h"
 
 #include "llama-kv-cache.h"
 #include "llama-kv-cache-iswa.h"
@@ -2131,6 +2132,21 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                     type = LLM_TYPE_1B;
                 }
             } break;
+        case LLM_ARCH_DFLASH:
+            {
+                ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
+                ml.get_key(LLM_KV_DFLASH_BLOCK_SIZE, hparams.dflash_block_size);
+                ml.get_key(LLM_KV_DFLASH_MASK_TOKEN_ID, hparams.dflash_mask_token_id);
+                const LLM_KV dflash_kv(arch);
+                if (!ml.get_arr(dflash_kv(LLM_KV_DFLASH_TARGET_LAYERS), dflash_target_layers, false) ||
+                    dflash_target_layers.empty()) {
+                    throw std::runtime_error("DFlash model requires target_layers metadata");
+                }
+                if (hparams.dflash_block_size < 2) {
+                    throw std::runtime_error("DFlash block_size must be at least 2");
+                }
+                type = LLM_TYPE_UNKNOWN;
+            } break;
         default: throw std::runtime_error("unsupported model architecture");
     }
 
@@ -2196,6 +2212,21 @@ void llama_model::load_hparams(llama_model_loader & ml) {
 
         LLAMA_LOG_INFO("%s: loaded EAGLE vocabulary mappings (d2t: %zu, t2d: %zu)\n",
                        __func__, ea_layer.d2t_map.size(), ea_layer.t2d_map.size());
+    }
+
+    if (arch == LLM_ARCH_DFLASH) {
+        const int kid = gguf_find_key(ml.meta.get(), "eagle.d2t_map");
+        if (kid >= 0) {
+            if (gguf_get_arr_type(ml.meta.get(), kid) != GGUF_TYPE_INT32) {
+                throw std::runtime_error("DFlash d2t map must use INT32 elements");
+            }
+            const int n = gguf_get_arr_n(ml.meta.get(), kid);
+            ea_layer.d2t_map.resize(n);
+            std::memcpy(
+                    ea_layer.d2t_map.data(),
+                    gguf_get_arr_data(ml.meta.get(), kid),
+                    n * sizeof(int32_t));
+        }
     }
 }
 
@@ -6346,6 +6377,48 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         // per-layer norms
                         ea_layer.attn_norm    = create_tensor(tn(LLM_TENSOR_ATTN_NORM,    "weight", i), {n_embd}, 0);
                         ea_layer.attn_norm_2  = create_tensor(tn(LLM_TENSOR_ATTN_NORM_2,  "weight", i), {n_embd}, 0);
+                    }
+                } break;
+            case LLM_ARCH_DFLASH:
+                {
+                    const int64_t n_embd_features = dflash_target_layers.size() * n_embd;
+
+                    fc = create_tensor(tn(LLM_TENSOR_FC, "weight"), {n_embd_features, n_embd}, 0);
+                    output_norm_enc = create_tensor(
+                            tn(LLM_TENSOR_ENC_OUTPUT_NORM, "weight"),
+                            {n_embd},
+                            0);
+                    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
+
+                    const std::string tok_name = tn(LLM_TENSOR_TOKEN_EMBD, "weight").str();
+                    if (const ggml_tensor * meta = ml.get_tensor_meta(tok_name.c_str())) {
+                        tok_embd = create_tensor(
+                                tn(LLM_TENSOR_TOKEN_EMBD, "weight"),
+                                {n_embd, meta->ne[1]},
+                                0);
+                    }
+
+                    const std::string out_name = tn(LLM_TENSOR_OUTPUT, "weight").str();
+                    if (const ggml_tensor * meta = ml.get_tensor_meta(out_name.c_str())) {
+                        output = create_tensor(
+                                tn(LLM_TENSOR_OUTPUT, "weight"),
+                                {n_embd, meta->ne[1]},
+                                0);
+                    }
+
+                    for (int i = 0; i < n_layer; ++i) {
+                        auto & layer = layers[i];
+                        layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0);
+                        layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q, "weight", i), {n_embd, n_embd_head_k * n_head}, 0);
+                        layer.wk = create_tensor(tn(LLM_TENSOR_ATTN_K, "weight", i), {n_embd, n_embd_k_gqa}, 0);
+                        layer.wv = create_tensor(tn(LLM_TENSOR_ATTN_V, "weight", i), {n_embd, n_embd_v_gqa}, 0);
+                        layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i), {n_embd_head_k * n_head, n_embd}, 0);
+                        layer.attn_q_norm = create_tensor(tn(LLM_TENSOR_ATTN_Q_NORM, "weight", i), {n_embd_head_k}, 0);
+                        layer.attn_k_norm = create_tensor(tn(LLM_TENSOR_ATTN_K_NORM, "weight", i), {n_embd_head_k}, 0);
+                        layer.ffn_norm = create_tensor(tn(LLM_TENSOR_FFN_NORM, "weight", i), {n_embd}, 0);
+                        layer.ffn_gate = create_tensor(tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd, n_ff}, 0);
+                        layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {n_ff, n_embd}, 0);
+                        layer.ffn_up = create_tensor(tn(LLM_TENSOR_FFN_UP, "weight", i), {n_embd, n_ff}, 0);
                     }
                 } break;
             default:
@@ -20812,6 +20885,18 @@ ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
                     llm = std::make_unique<llm_build_eagle3>(*this, params);
                 }
             } break;
+        case LLM_ARCH_DFLASH:
+            {
+                switch (params.gtype) {
+                    case LLM_GRAPH_TYPE_ENCODER:
+                        llm = std::make_unique<llm_build_dflash_encode>(*this, params);
+                        break;
+                    case LLM_GRAPH_TYPE_DEFAULT:
+                    case LLM_GRAPH_TYPE_DECODER:
+                        llm = std::make_unique<llm_build_dflash_decode>(*this, params);
+                        break;
+                }
+            } break;
         default:
             GGML_ABORT("fatal error");
     }
@@ -20992,6 +21077,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
         case LLM_ARCH_QWEN2MOE:
         case LLM_ARCH_QWEN3:
         case LLM_ARCH_QWEN3MOE:
+        case LLM_ARCH_DFLASH:
         case LLM_ARCH_EAGLE:
         case LLM_ARCH_LLADA_MOE:
         case LLM_ARCH_OLMO2:
@@ -21116,6 +21202,7 @@ bool llama_model_has_encoder(const llama_model * model) {
     switch (model->arch) {
         case LLM_ARCH_T5:        return true;
         case LLM_ARCH_T5ENCODER: return true;
+        case LLM_ARCH_DFLASH:    return true;
         default:                 return false;
     }
 }

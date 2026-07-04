@@ -229,3 +229,8 @@ target_include_directories(test-alloc PRIVATE ${PROJECT_SOURCE_DIR}/ggml/src)
 llama_build_and_test(test-moe-reuse.cpp)
 llama_build_and_test(test-moe-reuse-runtime.cpp)
 target_include_directories(test-moe-reuse-runtime PRIVATE ${PROJECT_SOURCE_DIR}/common)
+
+unset(LLAMA_TEST_NAME)
+llama_build(test-dflash.cpp)
+target_include_directories(test-dflash PRIVATE ${PROJECT_SOURCE_DIR}/src)
+llama_test(test-dflash)
