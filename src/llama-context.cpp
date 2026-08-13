@@ -2715,7 +2715,7 @@ llama_context * llama_init_from_model(
         return nullptr;
     }
 
-    if ((model->arch == LLM_ARCH_EAGLE3 || model->arch == LLM_ARCH_DFLASH) && params.target_model) {
+    if ((model->arch == LLM_ARCH_EAGLE || model->arch == LLM_ARCH_DFLASH) && params.target_model) {
         model->target_tok_embd = params.target_model->tok_embd;
         model->target_output = params.target_model->output;
     }
