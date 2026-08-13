@@ -360,6 +360,7 @@ extern "C" {
                           // ref: https://github.com/ggml-org/llama.cpp/pull/14363
 
         const struct llama_model * eagle3_model; // enables EAGLE3 target feature extraction
+        const struct llama_model * target_model; // target weights for assisted draft architectures
     };
 
     // model quantization parameters

@@ -2663,6 +2663,7 @@ llama_context_params llama_context_default_params() {
         /*.swa_full                    =*/ true,
         /*.kv_unified                  =*/ false,
         /*.eagle3_model                =*/ nullptr,
+        /*.target_model                =*/ nullptr,
     };
 
     return result;
@@ -2712,6 +2713,11 @@ llama_context * llama_init_from_model(
     if (ggml_is_quantized(params.type_v) && params.flash_attn_type == LLAMA_FLASH_ATTN_TYPE_DISABLED) {
         LLAMA_LOG_ERROR("%s: V cache quantization requires flash_attn\n", __func__);
         return nullptr;
+    }
+
+    if ((model->arch == LLM_ARCH_EAGLE3 || model->arch == LLM_ARCH_DFLASH) && params.target_model) {
+        model->target_tok_embd = params.target_model->tok_embd;
+        model->target_output = params.target_model->output;
     }
 
     try {

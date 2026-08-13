@@ -224,9 +224,6 @@ int main(int argc, char ** argv) {
     if (native_draft) {
         llama_model_params dft_mp = llama_model_default_params();
         dft_mp.n_gpu_layers = params.speculative.n_gpu_layers;
-        // Draft models must never enter the target SSD expert registry.
-        dft_mp.use_ssd_moe = false;
-        dft_mp.hot_experts_path = nullptr;
         dft_mp.use_mmap = params.use_mmap;
         model_dft = llama_model_load_from_file(params.speculative.model.path.c_str(), dft_mp);
         if (!model_dft) {
@@ -236,8 +233,6 @@ int main(int argc, char ** argv) {
 
         llama_model_params tgt_mp = llama_model_default_params();
         tgt_mp.n_gpu_layers = params.n_gpu_layers;
-        tgt_mp.use_ssd_moe = params.use_ssd_moe;
-        tgt_mp.hot_experts_path = params.hot_experts_path.empty() ? nullptr : params.hot_experts_path.c_str();
         tgt_mp.use_mmap = params.use_mmap;
         model_tgt = llama_model_load_from_file(params.model.path.c_str(), tgt_mp);
         if (!model_tgt) {
@@ -335,12 +330,16 @@ int main(int argc, char ** argv) {
         }
     }
 
-    const bool use_dataset = !params.dataset_path.empty();
+    // This compact example accepts one prompt. Dataset batching belongs to
+    // llama-speculative on the 4090 branch.
+    const std::string dataset_path;
+    const int n_questions_limit = 0;
+    const bool use_dataset = !dataset_path.empty();
     std::ifstream dataset_file;
     if (use_dataset) {
-        dataset_file.open(params.dataset_path);
+        dataset_file.open(dataset_path);
         if (!dataset_file.is_open()) {
-            LOG_ERR("%s: failed to open dataset file: %s\n", __func__, params.dataset_path.c_str());
+            LOG_ERR("%s: failed to open dataset file: %s\n", __func__, dataset_path.c_str());
             return 1;
         }
     } else if (params.prompt.empty()) {
@@ -368,8 +367,8 @@ int main(int argc, char ** argv) {
             if (json_line.empty()) {
                 continue;
             }
-            if (params.n_questions_limit > 0 && processed_count >= params.n_questions_limit) {
-                LOG_INF("Reached question limit (%d). Stopping.\n", params.n_questions_limit);
+            if (n_questions_limit > 0 && processed_count >= n_questions_limit) {
+                LOG_INF("Reached question limit (%d). Stopping.\n", n_questions_limit);
                 break;
             }
             question = extract_json_value(json_line, "question");
