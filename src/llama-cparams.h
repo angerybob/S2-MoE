@@ -37,7 +37,7 @@ struct llama_cparams {
     bool kv_unified;
     bool eagle3_extract_enabled;
     bool is_draft_context;
-    std::array<int32_t, 3> eagle3_extract_layers;
+    std::vector<int32_t> eagle3_extract_layers;
 
     enum llama_pooling_type pooling_type;
 

@@ -113,16 +113,24 @@ llama_context::llama_context(
     cparams.is_draft_context = false;
 
     if (cparams.eagle3_extract_enabled) {
-        const auto & eagle3_hparams = params.eagle3_model->hparams;
-        eagle3_extract_layer_indices.assign(
-                eagle3_hparams.eagle3_extract_layers.begin(),
-                eagle3_hparams.eagle3_extract_layers.end());
-        cparams.eagle3_extract_layers = eagle3_hparams.eagle3_extract_layers;
+        if (params.eagle3_model->arch == LLM_ARCH_DFLASH) {
+            if (params.eagle3_model->hparams.n_embd != model.hparams.n_embd) {
+                throw std::runtime_error("DFlash and target model hidden sizes must match");
+            }
+            eagle3_extract_layer_indices = params.eagle3_model->dflash_target_layers;
+            cparams.eagle3_extract_layers = eagle3_extract_layer_indices;
+        } else {
+            const auto & eagle3_hparams = params.eagle3_model->hparams;
+            eagle3_extract_layer_indices.assign(
+                    eagle3_hparams.eagle3_extract_layers.begin(),
+                    eagle3_hparams.eagle3_extract_layers.end());
+            cparams.eagle3_extract_layers.assign(
+                    eagle3_hparams.eagle3_extract_layers.begin(),
+                    eagle3_hparams.eagle3_extract_layers.end());
+        }
         eagle3_extract_tensors.assign(eagle3_extract_layer_indices.size(), nullptr);
-        LLAMA_LOG_INFO("%s: EAGLE3 extraction enabled for layers [%d, %d, %d]\n", __func__,
-                eagle3_extract_layer_indices[0],
-                eagle3_extract_layer_indices[1],
-                eagle3_extract_layer_indices[2]);
+        LLAMA_LOG_INFO("%s: assisted target feature extraction enabled for %zu layers\n",
+                __func__, eagle3_extract_layer_indices.size());
     }
 
     {
