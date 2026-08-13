@@ -359,12 +359,489 @@ struct ssd_entry_t {
 static std::map<std::string, ssd_entry_t> g_ssd_registry;
 static std::mutex g_ssd_mutex;
 
+static __device__ __forceinline__ float domino_load_scalar(const void * ptr, int64_t idx, int type) {
+    if (type == GGML_TYPE_F32) {
+        return ((const float *) ptr)[idx];
+    }
+    if (type == GGML_TYPE_F16) {
+        return __half2float(((const half *) ptr)[idx]);
+    }
+    if (type == GGML_TYPE_BF16) {
+        return __bfloat162float(((const nv_bfloat16 *) ptr)[idx]);
+    }
+    return 0.0f;
+}
+
+static __global__ void domino_gru_matvec_kernel(
+        const void * __restrict__ w_ih,
+        const void * __restrict__ w_hh,
+        const void * __restrict__ x,
+        const float * __restrict__ h,
+        int type_w_ih,
+        int type_w_hh,
+        int type_x,
+        int64_t H,
+        int64_t G,
+        float * __restrict__ gi,
+        float * __restrict__ gh) {
+    const int64_t row = blockIdx.x;
+    float sum_i = 0.0f;
+    float sum_h = 0.0f;
+    for (int64_t i = threadIdx.x; i < H; i += blockDim.x) {
+        sum_i += domino_load_scalar(w_ih, row * H + i, type_w_ih) *
+                 domino_load_scalar(x, i, type_x);
+    }
+    for (int64_t i = threadIdx.x; i < G; i += blockDim.x) {
+        sum_h += domino_load_scalar(w_hh, row * G + i, type_w_hh) * h[i];
+    }
+
+    __shared__ float red_i[256];
+    __shared__ float red_h[256];
+    red_i[threadIdx.x] = sum_i;
+    red_h[threadIdx.x] = sum_h;
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            red_i[threadIdx.x] += red_i[threadIdx.x + stride];
+            red_h[threadIdx.x] += red_h[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+        gi[row] = red_i[0];
+        gh[row] = red_h[0];
+    }
+}
+
+static __global__ void domino_gru_update_kernel(
+        const float * __restrict__ gi,
+        const float * __restrict__ gh,
+        const float * __restrict__ h,
+        int64_t G,
+        float * __restrict__ next) {
+    const int64_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= G) {
+        return;
+    }
+    const float r = 1.0f / (1.0f + expf(-(gi[i] + gh[i])));
+    const float z = 1.0f / (1.0f + expf(-(gi[G + i] + gh[G + i])));
+    const float n = tanhf(gi[2 * G + i] + r * gh[2 * G + i]);
+    next[i] = (1.0f - z) * n + z * h[i];
+}
+
+static __global__ void domino_fc1_kernel(
+        const void * __restrict__ fc1,
+        const void * __restrict__ hidden,
+        const float * __restrict__ h,
+        int type_fc1,
+        int type_hidden,
+        int64_t H,
+        int64_t G,
+        int64_t E,
+        float * __restrict__ mid) {
+    const int64_t row = blockIdx.x;
+    const int64_t K = H + G;
+    float sum = 0.0f;
+    for (int64_t i = threadIdx.x; i < H; i += blockDim.x) {
+        sum += domino_load_scalar(fc1, row * K + i, type_fc1) *
+               domino_load_scalar(hidden, i, type_hidden);
+    }
+    for (int64_t i = threadIdx.x; i < G; i += blockDim.x) {
+        sum += domino_load_scalar(fc1, row * K + H + i, type_fc1) * h[i];
+    }
+
+    __shared__ float red[256];
+    red[threadIdx.x] = sum;
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            red[threadIdx.x] += red[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0 && row < E) {
+        const float v = red[0];
+        mid[row] = v / (1.0f + expf(-v));
+    }
+}
+
+static __global__ void domino_fc2_kernel(
+        const void * __restrict__ fc2,
+        const float * __restrict__ mid,
+        int type_fc2,
+        int64_t E,
+        int64_t V,
+        float * __restrict__ scores) {
+    const int64_t row = blockIdx.x;
+    float sum = 0.0f;
+    for (int64_t i = threadIdx.x; i < E; i += blockDim.x) {
+        sum += domino_load_scalar(fc2, row * E + i, type_fc2) * mid[i];
+    }
+
+    __shared__ float red[256];
+    red[threadIdx.x] = sum;
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            red[threadIdx.x] += red[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0 && row < V) {
+        scores[row] += red[0];
+    }
+}
+
+static __global__ void domino_lm_head_kernel(
+        const void * __restrict__ output,
+        const void * __restrict__ hidden,
+        int type_output,
+        int type_hidden,
+        size_t output_nb1,
+        int64_t H,
+        int64_t V,
+        float * __restrict__ scores) {
+    const int64_t row = blockIdx.x;
+    const char * wrow = (const char *) output + (size_t) row * output_nb1;
+    float sum = 0.0f;
+    for (int64_t i = threadIdx.x; i < H; i += blockDim.x) {
+        sum += domino_load_scalar(wrow, i, type_output) *
+               domino_load_scalar(hidden, i, type_hidden);
+    }
+
+    __shared__ float red[256];
+    red[threadIdx.x] = sum;
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            red[threadIdx.x] += red[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0 && row < V) {
+        scores[row] = red[0];
+    }
+}
+
+static __global__ void domino_argmax_stage1_kernel(
+        const float * __restrict__ scores,
+        int64_t V,
+        float * __restrict__ block_vals,
+        int32_t * __restrict__ block_ids) {
+    const int64_t begin = (int64_t) blockIdx.x * blockDim.x;
+    const int64_t idx = begin + threadIdx.x;
+    float val = idx < V ? scores[idx] : -INFINITY;
+    int32_t id = idx < V ? (int32_t) idx : -1;
+
+    __shared__ float vals[256];
+    __shared__ int32_t ids[256];
+    vals[threadIdx.x] = val;
+    ids[threadIdx.x] = id;
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride && vals[threadIdx.x + stride] > vals[threadIdx.x]) {
+            vals[threadIdx.x] = vals[threadIdx.x + stride];
+            ids[threadIdx.x] = ids[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+        block_vals[blockIdx.x] = vals[0];
+        block_ids[blockIdx.x] = ids[0];
+    }
+}
+
+static __global__ void domino_argmax_stage2_kernel(
+        const float * __restrict__ block_vals,
+        const int32_t * __restrict__ block_ids,
+        int32_t n_blocks,
+        int32_t * __restrict__ out_token) {
+    float val = -INFINITY;
+    int32_t id = -1;
+    for (int32_t i = threadIdx.x; i < n_blocks; i += blockDim.x) {
+        const float cur_val = block_vals[i];
+        if (cur_val > val) {
+            val = cur_val;
+            id = block_ids[i];
+        }
+    }
+
+    __shared__ float vals[512];
+    __shared__ int32_t ids[512];
+    vals[threadIdx.x] = val;
+    ids[threadIdx.x] = id;
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride && vals[threadIdx.x + stride] > vals[threadIdx.x]) {
+            vals[threadIdx.x] = vals[threadIdx.x + stride];
+            ids[threadIdx.x] = ids[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+        *out_token = ids[0];
+    }
+}
+
+static int llama_cuda_domino_check_tensor(const ggml_tensor * t) {
+    if (!t || !t->data) {
+        return -1;
+    }
+    if (t->type != GGML_TYPE_F32 && t->type != GGML_TYPE_F16 && t->type != GGML_TYPE_BF16) {
+        return -2;
+    }
+    return 0;
+}
+
+struct llama_cuda_domino_workspace {
+    int32_t * tokens = nullptr;
+    void * prefix_embs = nullptr;
+    void * gru_w_ih = nullptr;
+    void * gru_w_hh = nullptr;
+    void * fc1 = nullptr;
+    void * fc2 = nullptr;
+    float * h = nullptr;
+    float * next = nullptr;
+    float * gi = nullptr;
+    float * gh = nullptr;
+    float * mid = nullptr;
+    float * scores = nullptr;
+    float * block_vals = nullptr;
+    int32_t * block_ids = nullptr;
+    int32_t * out_token = nullptr;
+    int64_t cap_tokens = 0;
+    int64_t cap_G = 0;
+    int64_t cap_E = 0;
+    int64_t cap_V = 0;
+    int64_t cap_blocks = 0;
+    size_t  cap_prefix_emb_bytes = 0;
+    size_t  gru_w_ih_bytes = 0;
+    size_t  gru_w_hh_bytes = 0;
+    size_t  fc1_bytes = 0;
+    size_t  fc2_bytes = 0;
+    const void * gru_w_ih_src = nullptr;
+    const void * gru_w_hh_src = nullptr;
+    const void * fc1_src = nullptr;
+    const void * fc2_src = nullptr;
+};
+
+static int llama_cuda_domino_ensure_workspace(
+        llama_cuda_domino_workspace & ws,
+        int64_t n_tokens,
+        int64_t G,
+        int64_t E,
+        int64_t V) {
+    const int64_t n_blocks = (V + 255) / 256;
+    if (n_tokens > ws.cap_tokens) {
+        if (ws.tokens) {
+            cudaFree(ws.tokens);
+        }
+        CUDA_CHECK(cudaMalloc(&ws.tokens, std::max<int64_t>(1, n_tokens) * sizeof(int32_t)));
+        ws.cap_tokens = n_tokens;
+    }
+    if (G > ws.cap_G) {
+        if (ws.h) cudaFree(ws.h);
+        if (ws.next) cudaFree(ws.next);
+        if (ws.gi) cudaFree(ws.gi);
+        if (ws.gh) cudaFree(ws.gh);
+        CUDA_CHECK(cudaMalloc(&ws.h,    G * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&ws.next, G * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&ws.gi,   3 * G * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&ws.gh,   3 * G * sizeof(float)));
+        ws.cap_G = G;
+    }
+    if (E > ws.cap_E) {
+        if (ws.mid) cudaFree(ws.mid);
+        CUDA_CHECK(cudaMalloc(&ws.mid, E * sizeof(float)));
+        ws.cap_E = E;
+    }
+    if (V > ws.cap_V) {
+        if (ws.scores) cudaFree(ws.scores);
+        CUDA_CHECK(cudaMalloc(&ws.scores, V * sizeof(float)));
+        ws.cap_V = V;
+    }
+    if (n_blocks > ws.cap_blocks) {
+        if (ws.block_vals) cudaFree(ws.block_vals);
+        if (ws.block_ids) cudaFree(ws.block_ids);
+        CUDA_CHECK(cudaMalloc(&ws.block_vals, n_blocks * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&ws.block_ids,  n_blocks * sizeof(int32_t)));
+        ws.cap_blocks = n_blocks;
+    }
+    if (!ws.out_token) {
+        CUDA_CHECK(cudaMalloc(&ws.out_token, sizeof(int32_t)));
+    }
+    return 0;
+}
+
+static int llama_cuda_domino_ensure_bytes(
+        void ** dst,
+        size_t * cap,
+        size_t n_bytes) {
+    if (*cap < n_bytes) {
+        if (*dst) {
+            CUDA_CHECK(cudaFree(*dst));
+        }
+        CUDA_CHECK(cudaMalloc(dst, n_bytes));
+        *cap = n_bytes;
+    }
+    return 0;
+}
+
+static int llama_cuda_domino_ensure_tensor_copy(
+        void ** dst,
+        size_t * cap,
+        const void ** src_seen,
+        const ggml_tensor * src) {
+    const size_t n_bytes = ggml_nbytes(src);
+    if (*cap < n_bytes || *src_seen != src->data) {
+        llama_cuda_domino_ensure_bytes(dst, cap, n_bytes);
+        CUDA_CHECK(cudaMemcpyAsync(*dst, src->data, n_bytes, cudaMemcpyDefault, 0));
+        *src_seen = src->data;
+    }
+    return 0;
+}
+
 extern "C" {
     // 增加 data_ptr 参数
     void ggml_cuda_register_ssd_expert(const char* key, const char* fname, size_t offset, size_t size, void* data_ptr) {
         std::lock_guard<std::mutex> lock(g_ssd_mutex);
-        // 如果 data_ptr 不为空，fname/offset 其实就不重要了，但存着也没事
         g_ssd_registry[key] = { std::string(fname), offset, size, data_ptr };
+    }
+
+    int llama_cuda_domino_sample(
+            const struct ggml_tensor * target_tok_embd,
+            const struct ggml_tensor * target_output,
+            const struct ggml_tensor * gru_w_ih,
+            const struct ggml_tensor * gru_w_hh,
+            const struct ggml_tensor * fc1,
+            const struct ggml_tensor * fc2,
+            const struct ggml_tensor * parallel_hidden,
+            int32_t output_index,
+            const int32_t * prefix_tokens,
+            int32_t n_prefix_tokens,
+            bool apply_correction,
+            int32_t * out_token) {
+        if (!out_token || !prefix_tokens || n_prefix_tokens < 0 || output_index < 0) {
+            return -10;
+        }
+        *out_token = -1;
+        if (llama_cuda_domino_check_tensor(target_tok_embd) ||
+            llama_cuda_domino_check_tensor(target_output) ||
+            llama_cuda_domino_check_tensor(gru_w_ih) ||
+            llama_cuda_domino_check_tensor(gru_w_hh) ||
+            llama_cuda_domino_check_tensor(fc1) ||
+            llama_cuda_domino_check_tensor(fc2) ||
+            llama_cuda_domino_check_tensor(parallel_hidden)) {
+            return -11;
+        }
+
+        const int64_t H = gru_w_ih->ne[0];
+        const int64_t G = gru_w_hh->ne[0];
+        const int64_t E = fc1->ne[1];
+        const int64_t V = target_output->ne[1];
+        if (H <= 0 || G <= 0 || E <= 0 || V <= 0) {
+            return -12;
+        }
+        if (gru_w_ih->ne[1] != 3 * G || gru_w_hh->ne[1] != 3 * G ||
+            fc1->ne[0] != H + G || fc2->ne[0] != E ||
+            fc2->ne[1] != V || target_output->ne[0] != H) {
+            return -13;
+        }
+        if (output_index >= parallel_hidden->ne[1]) {
+            return -14;
+        }
+
+        static thread_local llama_cuda_domino_workspace ws;
+        cudaStream_t stream = 0;
+
+        const size_t tokens_bytes = std::max<int32_t>(1, n_prefix_tokens) * sizeof(int32_t);
+        llama_cuda_domino_ensure_workspace(ws, std::max<int32_t>(1, n_prefix_tokens), G, E, V);
+        llama_cuda_domino_ensure_tensor_copy(&ws.gru_w_ih, &ws.gru_w_ih_bytes, &ws.gru_w_ih_src, gru_w_ih);
+        llama_cuda_domino_ensure_tensor_copy(&ws.gru_w_hh, &ws.gru_w_hh_bytes, &ws.gru_w_hh_src, gru_w_hh);
+        llama_cuda_domino_ensure_tensor_copy(&ws.fc1,      &ws.fc1_bytes,      &ws.fc1_src,      fc1);
+        llama_cuda_domino_ensure_tensor_copy(&ws.fc2,      &ws.fc2_bytes,      &ws.fc2_src,      fc2);
+
+        const size_t emb_elem_size = ggml_type_size(target_tok_embd->type);
+        const size_t emb_row_bytes = H * emb_elem_size;
+        const size_t prefix_emb_bytes = std::max<int32_t>(1, n_prefix_tokens) * emb_row_bytes;
+        if ((size_t) ws.cap_prefix_emb_bytes < prefix_emb_bytes) {
+            if (ws.prefix_embs) {
+                CUDA_CHECK(cudaFree(ws.prefix_embs));
+            }
+            CUDA_CHECK(cudaMalloc(&ws.prefix_embs, prefix_emb_bytes));
+            ws.cap_prefix_emb_bytes = prefix_emb_bytes;
+        }
+
+        CUDA_CHECK(cudaMemcpyAsync(ws.tokens, prefix_tokens, tokens_bytes, cudaMemcpyHostToDevice, stream));
+        CUDA_CHECK(cudaMemsetAsync(ws.h, 0, G * sizeof(float), stream));
+
+        for (int32_t p = 0; p < n_prefix_tokens; ++p) {
+            int32_t tok = prefix_tokens[p];
+            if (tok < 0 || tok >= target_tok_embd->ne[1]) {
+                return -15;
+            }
+            const char * emb_base = (const char *) target_tok_embd->data + (size_t) tok * target_tok_embd->nb[1];
+            char * emb_dev = (char *) ws.prefix_embs + (size_t) p * emb_row_bytes;
+            CUDA_CHECK(cudaMemcpyAsync(emb_dev, emb_base, emb_row_bytes, cudaMemcpyDefault, stream));
+            domino_gru_matvec_kernel<<<3 * G, 256, 0, stream>>>(
+                    ws.gru_w_ih,
+                    ws.gru_w_hh,
+                    emb_dev,
+                    ws.h,
+                    (int) gru_w_ih->type,
+                    (int) gru_w_hh->type,
+                    (int) target_tok_embd->type,
+                    H,
+                    G,
+                    ws.gi,
+                    ws.gh);
+            domino_gru_update_kernel<<<(G + 255) / 256, 256, 0, stream>>>(ws.gi, ws.gh, ws.h, G, ws.next);
+            std::swap(ws.h, ws.next);
+        }
+
+        const char * hidden_base = (const char *) parallel_hidden->data + (size_t) output_index * parallel_hidden->nb[1];
+        domino_lm_head_kernel<<<V, 256, 0, stream>>>(
+                target_output->data,
+                hidden_base,
+                (int) target_output->type,
+                (int) parallel_hidden->type,
+                target_output->nb[1],
+                H,
+                V,
+                ws.scores);
+
+        if (apply_correction) {
+            domino_fc1_kernel<<<E, 256, 0, stream>>>(
+                    ws.fc1,
+                    hidden_base,
+                    ws.h,
+                    (int) fc1->type,
+                    (int) parallel_hidden->type,
+                    H,
+                    G,
+                    E,
+                    ws.mid);
+            domino_fc2_kernel<<<V, 256, 0, stream>>>(
+                    ws.fc2,
+                    ws.mid,
+                    (int) fc2->type,
+                    E,
+                    V,
+                    ws.scores);
+        }
+
+        const int32_t n_blocks = (int32_t) ((V + 255) / 256);
+        domino_argmax_stage1_kernel<<<n_blocks, 256, 0, stream>>>(ws.scores, V, ws.block_vals, ws.block_ids);
+        int stage2_threads = 1;
+        while (stage2_threads < n_blocks) {
+            stage2_threads <<= 1;
+        }
+        stage2_threads = std::min(stage2_threads, 512);
+        domino_argmax_stage2_kernel<<<1, stage2_threads, 0, stream>>>(ws.block_vals, ws.block_ids, n_blocks, ws.out_token);
+        CUDA_CHECK(cudaMemcpyAsync(out_token, ws.out_token, sizeof(int32_t), cudaMemcpyDeviceToHost, stream));
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+        CUDA_CHECK(cudaGetLastError());
+        return 0;
     }
 
     // // 1. 注册函数：供 llama.cpp 调用，填充数据
@@ -419,6 +896,13 @@ extern "C" {
         std::lock_guard<std::mutex> lock(g_ssd_mutex);
         
         std::string name(base_name);
+        const size_t hash_first = name.find('#');
+        if (hash_first != std::string::npos) {
+            const size_t hash_last = name.rfind('#');
+            if (hash_last != std::string::npos && hash_last > hash_first) {
+                name = name.substr(hash_first + 1, hash_last - hash_first - 1);
+            }
+        }
         char buf[256];
         int layer_id = -1;
         char type_str[128] = {0}; // 加大一点

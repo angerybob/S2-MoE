@@ -504,6 +504,46 @@ static llama_tokens gen_dflash_draft(
         return {};
     }
 
+    const llama_model * model_dft = llama_get_model(ctx_dft);
+    if (llama_model_dflash_is_domino(model_dft)) {
+        const int32_t prefix_len =
+            static_cast<int32_t>(llama_model_dflash_domino_prefix_len(model_dft));
+        GGML_ASSERT(llama_model_dflash_domino_shift_label(model_dft));
+
+        llama_batch & batch = spec->batch;
+        common_batch_clear(batch);
+        common_batch_add(batch, id_last, n, {0}, true);
+        // Domino uses the hidden states at positions [0, n_draft) to predict
+        // the next n_draft tokens, but the DFlash decoder is non-causal.  Match
+        // the Python reference block of size n_draft + 1 so the final future
+        // mask token also participates in attention.
+        for (int32_t i = 1; i <= n_draft; ++i) {
+            common_batch_add(batch, spec->dflash_mask_token, n + i, {0}, true);
+        }
+        GGML_ASSERT(llama_decode(ctx_dft, batch) == 0);
+
+        llama_tokens result;
+        llama_tokens prefix;
+        result.reserve(n_draft);
+        prefix.reserve(n_draft + 1);
+        prefix.push_back(id_last);
+        common_sampler_reset(spec->smpl);
+
+        for (int32_t i = 0; i < n_draft; ++i) {
+            const llama_token id = llama_dflash_domino_sample_gpu(
+                ctx_dft,
+                ctx_tgt,
+                prefix.data(),
+                static_cast<int32_t>(prefix.size()),
+                i,
+                i >= prefix_len);
+            result.push_back(id);
+            prefix.push_back(id);
+        }
+
+        return result;
+    }
+
     llama_batch & batch = spec->batch;
     common_batch_clear(batch);
     common_batch_add(batch, id_last, n, {0}, true);

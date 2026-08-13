@@ -568,6 +568,23 @@ extern "C" {
     LLAMA_API int32_t llama_model_dflash_block_size(const struct llama_model * model);
     LLAMA_API llama_token llama_model_dflash_mask_token(const struct llama_model * model);
     LLAMA_API uint32_t llama_model_dflash_target_layer_count(const struct llama_model * model);
+    LLAMA_API bool llama_model_dflash_is_domino(const struct llama_model * model);
+    LLAMA_API uint32_t llama_model_dflash_domino_prefix_len(const struct llama_model * model);
+    LLAMA_API bool llama_model_dflash_domino_shift_label(const struct llama_model * model);
+    LLAMA_API llama_token llama_dflash_domino_sample(
+            const struct llama_context * ctx_dft,
+            const struct llama_context * ctx_tgt,
+            const llama_token * prefix_tokens,
+            int32_t n_prefix_tokens,
+            const float * parallel_hidden,
+            const float * base_logits);
+    LLAMA_API llama_token llama_dflash_domino_sample_gpu(
+            struct llama_context * ctx_dft,
+            struct llama_context * ctx_tgt,
+            const llama_token * prefix_tokens,
+            int32_t n_prefix_tokens,
+            int32_t output_index,
+            bool apply_correction);
 
     // Returns true if the model contains an encoder that requires llama_encode() call
     LLAMA_API bool llama_model_has_encoder(const struct llama_model * model);

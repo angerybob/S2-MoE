@@ -17,7 +17,14 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <cmath>
 #include <vector>
+#include <limits>
+#include <memory>
+#include <thread>
+#include <cstdlib>
+#include <string>
+#include <unordered_map>
 // --- INSERT START: Global SSD Bridge ---
 #include <map>
 #include <mutex>
@@ -30,6 +37,19 @@
 #endif
 #ifdef GGML_USE_CUDA
 extern "C" void ggml_cuda_register_ssd_expert(const char* key, const char* fname, size_t offset, size_t size, void* data_ptr);
+extern "C" int llama_cuda_domino_sample(
+        const struct ggml_tensor * target_tok_embd,
+        const struct ggml_tensor * target_output,
+        const struct ggml_tensor * gru_w_ih,
+        const struct ggml_tensor * gru_w_hh,
+        const struct ggml_tensor * fc1,
+        const struct ggml_tensor * fc2,
+        const struct ggml_tensor * parallel_hidden,
+        int32_t output_index,
+        const int32_t * prefix_tokens,
+        int32_t n_prefix_tokens,
+        bool apply_correction,
+        int32_t * out_token);
 #else
 extern "C" void ggml_cuda_register_ssd_expert(const char*, const char*, size_t, size_t, void*) {}
 #endif
@@ -967,6 +987,403 @@ bool llama_has_target_draft_mapping(const struct llama_model * model, llama_toke
     size_t t2d_size = model->ea_layer.t2d_map.size();
 
     return (target_token >= 0 && target_token < (llama_token)t2d_size && t2d_map[target_token]);
+}
+
+bool llama_model_dflash_is_domino(const struct llama_model * model) {
+    return model && model->arch == LLM_ARCH_DFLASH && model->dflash_domino;
+}
+
+uint32_t llama_model_dflash_domino_prefix_len(const struct llama_model * model) {
+    return llama_model_dflash_is_domino(model) ? model->dflash_domino_prefix_len : 0;
+}
+
+bool llama_model_dflash_domino_shift_label(const struct llama_model * model) {
+    return llama_model_dflash_is_domino(model) && model->dflash_domino_shift_label;
+}
+
+namespace {
+
+struct dflash_domino_cache {
+    std::vector<float> gru_w_ih;
+    std::vector<float> gru_w_hh;
+    std::vector<float> fc1;
+    std::vector<float> fc2;
+    int64_t hidden = 0;
+    int64_t gru_hidden = 0;
+    int64_t emb_dim = 0;
+    int64_t vocab = 0;
+};
+
+struct dflash_domino_runtime_state {
+    const llama_model * model_dft = nullptr;
+    const llama_model * model_tgt = nullptr;
+    std::vector<llama_token> prefix;
+    std::vector<float> h;
+    std::unordered_map<llama_token, std::vector<float>> emb_cache;
+};
+
+static void tensor_to_float(const ggml_tensor * t, std::vector<float> & out) {
+    const int64_t n = ggml_nelements(t);
+    out.resize(n);
+    const size_t nbytes = ggml_nbytes(t);
+    switch (t->type) {
+        case GGML_TYPE_F32:
+            ggml_backend_tensor_get(t, out.data(), 0, nbytes);
+            break;
+        case GGML_TYPE_F16: {
+            std::vector<ggml_fp16_t> tmp(n);
+            ggml_backend_tensor_get(t, tmp.data(), 0, nbytes);
+            ggml_fp16_to_fp32_row(tmp.data(), out.data(), n);
+        } break;
+        case GGML_TYPE_BF16: {
+            std::vector<ggml_bf16_t> tmp(n);
+            ggml_backend_tensor_get(t, tmp.data(), 0, nbytes);
+            ggml_bf16_to_fp32_row(tmp.data(), out.data(), n);
+        } break;
+        default:
+            throw std::runtime_error("Domino tensors must be F32/F16/BF16");
+    }
+}
+
+static void tensor_row_to_float_uncached(const ggml_tensor * t, int64_t row, std::vector<float> & out) {
+    const int64_t cols = t->ne[0];
+    out.resize(cols);
+    const size_t offset = row * t->nb[1];
+    const size_t nbytes = cols * ggml_type_size(t->type);
+    switch (t->type) {
+        case GGML_TYPE_F32:
+            ggml_backend_tensor_get(t, out.data(), offset, nbytes);
+            break;
+        case GGML_TYPE_F16: {
+            std::vector<ggml_fp16_t> tmp(cols);
+            ggml_backend_tensor_get(t, tmp.data(), offset, nbytes);
+            ggml_fp16_to_fp32_row(tmp.data(), out.data(), cols);
+        } break;
+        case GGML_TYPE_BF16: {
+            std::vector<ggml_bf16_t> tmp(cols);
+            ggml_backend_tensor_get(t, tmp.data(), offset, nbytes);
+            ggml_bf16_to_fp32_row(tmp.data(), out.data(), cols);
+        } break;
+        default:
+            throw std::runtime_error("Domino target embeddings must be F32/F16/BF16");
+    }
+}
+
+static const std::vector<float> & tensor_row_to_float_cached(
+        dflash_domino_runtime_state & state,
+        const ggml_tensor * t,
+        llama_token token) {
+    auto it = state.emb_cache.find(token);
+    if (it != state.emb_cache.end()) {
+        return it->second;
+    }
+
+    std::vector<float> row;
+    tensor_row_to_float_uncached(t, token, row);
+    auto inserted = state.emb_cache.emplace(token, std::move(row));
+    return inserted.first->second;
+}
+
+static const dflash_domino_cache & get_domino_cache(const llama_model * model) {
+    static std::mutex mutex;
+    static std::map<const llama_model *, std::unique_ptr<dflash_domino_cache>> caches;
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = caches.find(model);
+    if (it != caches.end()) {
+        return *it->second;
+    }
+    if (!llama_model_dflash_is_domino(model)) {
+        throw std::runtime_error("DFlash model is not a Domino draft model");
+    }
+
+    auto cache = std::make_unique<dflash_domino_cache>();
+    cache->hidden     = model->dflash_domino_gru_w_ih->ne[0];
+    cache->gru_hidden = model->dflash_domino_gru_w_hh->ne[0];
+    cache->emb_dim    = model->dflash_domino_fc1->ne[1];
+    cache->vocab      = model->dflash_domino_fc2->ne[1];
+    tensor_to_float(model->dflash_domino_gru_w_ih, cache->gru_w_ih);
+    tensor_to_float(model->dflash_domino_gru_w_hh, cache->gru_w_hh);
+    tensor_to_float(model->dflash_domino_fc1,      cache->fc1);
+    tensor_to_float(model->dflash_domino_fc2,      cache->fc2);
+
+    auto inserted = caches.emplace(model, std::move(cache));
+    return *inserted.first->second;
+}
+
+static void gru_step(
+        const dflash_domino_cache & c,
+        const float * x,
+        std::vector<float> & h,
+        std::vector<float> & gi,
+        std::vector<float> & gh) {
+    const int64_t H = c.hidden;
+    const int64_t G = c.gru_hidden;
+    gi.assign(3 * G, 0.0f);
+    gh.assign(3 * G, 0.0f);
+    for (int64_t o = 0; o < 3 * G; ++o) {
+        const float * w_ih = c.gru_w_ih.data() + o * H;
+        const float * w_hh = c.gru_w_hh.data() + o * G;
+        for (int64_t i = 0; i < H; ++i) {
+            gi[o] += w_ih[i] * x[i];
+        }
+        for (int64_t i = 0; i < G; ++i) {
+            gh[o] += w_hh[i] * h[i];
+        }
+    }
+
+    std::vector<float> next(G);
+    for (int64_t i = 0; i < G; ++i) {
+        const float r = 1.0f / (1.0f + std::exp(-(gi[i] + gh[i])));
+        const float z = 1.0f / (1.0f + std::exp(-(gi[G + i] + gh[G + i])));
+        const float n = std::tanh(gi[2 * G + i] + r * gh[2 * G + i]);
+        next[i] = (1.0f - z) * n + z * h[i];
+    }
+    h.swap(next);
+}
+
+static bool domino_prefix_matches(
+        const std::vector<llama_token> & cached,
+        const llama_token * prefix_tokens,
+        int32_t n_prefix_tokens) {
+    if (cached.size() != static_cast<size_t>(n_prefix_tokens)) {
+        return false;
+    }
+    for (int32_t i = 0; i < n_prefix_tokens; ++i) {
+        if (cached[i] != prefix_tokens[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool domino_prefix_is_one_token_extension(
+        const std::vector<llama_token> & cached,
+        const llama_token * prefix_tokens,
+        int32_t n_prefix_tokens) {
+    if (cached.size() + 1 != static_cast<size_t>(n_prefix_tokens)) {
+        return false;
+    }
+    for (size_t i = 0; i < cached.size(); ++i) {
+        if (cached[i] != prefix_tokens[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void domino_update_prefix_state(
+        const dflash_domino_cache & c,
+        dflash_domino_runtime_state & state,
+        const llama_model * model_dft,
+        const llama_model * model_tgt,
+        const llama_token * prefix_tokens,
+        int32_t n_prefix_tokens) {
+    if (state.model_dft != model_dft || state.model_tgt != model_tgt) {
+        state.model_dft = model_dft;
+        state.model_tgt = model_tgt;
+        state.prefix.clear();
+        state.h.clear();
+        state.emb_cache.clear();
+    }
+
+    if (domino_prefix_matches(state.prefix, prefix_tokens, n_prefix_tokens)) {
+        return;
+    }
+
+    std::vector<float> gi;
+    std::vector<float> gh;
+
+    if (domino_prefix_is_one_token_extension(state.prefix, prefix_tokens, n_prefix_tokens)) {
+        const auto & emb = tensor_row_to_float_cached(state, model_tgt->tok_embd, prefix_tokens[n_prefix_tokens - 1]);
+        if (state.h.empty()) {
+            state.h.assign(c.gru_hidden, 0.0f);
+        }
+        gru_step(c, emb.data(), state.h, gi, gh);
+        state.prefix.push_back(prefix_tokens[n_prefix_tokens - 1]);
+        return;
+    }
+
+    state.prefix.assign(prefix_tokens, prefix_tokens + n_prefix_tokens);
+    state.h.assign(c.gru_hidden, 0.0f);
+    for (int32_t i = 0; i < n_prefix_tokens; ++i) {
+        const auto & emb = tensor_row_to_float_cached(state, model_tgt->tok_embd, prefix_tokens[i]);
+        gru_step(c, emb.data(), state.h, gi, gh);
+    }
+}
+
+static int domino_thread_count() {
+    static int n_threads = []() {
+        if (const char * env = std::getenv("LLAMA_DOMINO_THREADS")) {
+            try {
+                return std::max(1, std::stoi(env));
+            } catch (...) {
+                return 1;
+            }
+        }
+        const unsigned hw = std::thread::hardware_concurrency();
+        return static_cast<int>(std::max(1u, std::min(hw == 0 ? 1u : hw, 8u)));
+    }();
+    return n_threads;
+}
+
+static std::pair<llama_token, float> domino_fc2_argmax(
+        const dflash_domino_cache & c,
+        const std::vector<float> & mid,
+        const float * base_logits) {
+    const int64_t V = c.vocab;
+    const int64_t E = c.emb_dim;
+    const int n_threads = std::min<int64_t>(domino_thread_count(), std::max<int64_t>(1, V));
+    if (n_threads <= 1 || V < 4096) {
+        llama_token best_id = 0;
+        float best = -std::numeric_limits<float>::infinity();
+        for (int64_t v = 0; v < V; ++v) {
+            const float * w = c.fc2.data() + v * E;
+            float logit = base_logits[v];
+            for (int64_t i = 0; i < E; ++i) {
+                logit += w[i] * mid[i];
+            }
+            if (logit > best) {
+                best = logit;
+                best_id = static_cast<llama_token>(v);
+            }
+        }
+        return { best_id, best };
+    }
+
+    struct local_best {
+        llama_token id = 0;
+        float value = -std::numeric_limits<float>::infinity();
+    };
+
+    std::vector<local_best> bests(n_threads);
+    std::vector<std::thread> workers;
+    workers.reserve(n_threads);
+
+    for (int t = 0; t < n_threads; ++t) {
+        const int64_t begin = (V * t) / n_threads;
+        const int64_t end   = (V * (t + 1)) / n_threads;
+        workers.emplace_back([&, t, begin, end]() {
+            llama_token best_id = static_cast<llama_token>(begin);
+            float best = -std::numeric_limits<float>::infinity();
+            for (int64_t v = begin; v < end; ++v) {
+                const float * w = c.fc2.data() + v * E;
+                float logit = base_logits[v];
+                for (int64_t i = 0; i < E; ++i) {
+                    logit += w[i] * mid[i];
+                }
+                if (logit > best) {
+                    best = logit;
+                    best_id = static_cast<llama_token>(v);
+                }
+            }
+            bests[t] = { best_id, best };
+        });
+    }
+
+    for (auto & worker : workers) {
+        worker.join();
+    }
+
+    llama_token best_id = bests[0].id;
+    float best = bests[0].value;
+    for (int t = 1; t < n_threads; ++t) {
+        if (bests[t].value > best) {
+            best = bests[t].value;
+            best_id = bests[t].id;
+        }
+    }
+    return { best_id, best };
+}
+
+} // namespace
+
+llama_token llama_dflash_domino_sample(
+        const struct llama_context * ctx_dft,
+        const struct llama_context * ctx_tgt,
+        const llama_token * prefix_tokens,
+        int32_t n_prefix_tokens,
+        const float * parallel_hidden,
+        const float * base_logits) {
+    const llama_model * model_dft = llama_get_model(ctx_dft);
+    const llama_model * model_tgt = llama_get_model(ctx_tgt);
+    const dflash_domino_cache & c = get_domino_cache(model_dft);
+    if (!model_tgt->tok_embd) {
+        throw std::runtime_error("Domino requires target token embeddings");
+    }
+
+    thread_local dflash_domino_runtime_state state;
+    domino_update_prefix_state(c, state, model_dft, model_tgt, prefix_tokens, n_prefix_tokens);
+
+    std::vector<float> mid(c.emb_dim, 0.0f);
+    for (int64_t o = 0; o < c.emb_dim; ++o) {
+        const float * w = c.fc1.data() + o * (c.hidden + c.gru_hidden);
+        float sum = 0.0f;
+        for (int64_t i = 0; i < c.hidden; ++i) {
+            sum += w[i] * parallel_hidden[i];
+        }
+        for (int64_t i = 0; i < c.gru_hidden; ++i) {
+            sum += w[c.hidden + i] * state.h[i];
+        }
+        mid[o] = sum / (1.0f + std::exp(-sum));
+    }
+
+    return domino_fc2_argmax(c, mid, base_logits).first;
+}
+
+llama_token llama_dflash_domino_sample_gpu(
+        struct llama_context * ctx_dft,
+        struct llama_context * ctx_tgt,
+        const llama_token * prefix_tokens,
+        int32_t n_prefix_tokens,
+        int32_t output_index,
+        bool apply_correction) {
+    const llama_model * model_dft = llama_get_model(ctx_dft);
+    const llama_model * model_tgt = llama_get_model(ctx_tgt);
+
+#ifdef GGML_USE_CUDA
+    const bool domino_force_cpu = []() {
+        const char * env = std::getenv("LLAMA_DOMINO_FORCE_CPU");
+        return env && std::string(env) != "0";
+    }();
+    const ggml_tensor * target_output = model_tgt->output ? model_tgt->output : model_tgt->tok_embd;
+    if (!domino_force_cpu && llama_model_dflash_is_domino(model_dft) && model_tgt->tok_embd && target_output) {
+        ctx_dft->synchronize();
+        llm_graph_result * res = ctx_dft->get_graph_result();
+        ggml_tensor * t_hidden = res ? res->get_embd() : nullptr;
+        if (t_hidden) {
+            int32_t out_token = -1;
+            const int rc = llama_cuda_domino_sample(
+                    model_tgt->tok_embd,
+                    target_output,
+                    model_dft->dflash_domino_gru_w_ih,
+                    model_dft->dflash_domino_gru_w_hh,
+                    model_dft->dflash_domino_fc1,
+                    model_dft->dflash_domino_fc2,
+                    t_hidden,
+                    output_index,
+                    reinterpret_cast<const int32_t *>(prefix_tokens),
+                    n_prefix_tokens,
+                    apply_correction,
+                    &out_token);
+            if (rc == 0 && out_token >= 0) {
+                return static_cast<llama_token>(out_token);
+            }
+            LLAMA_LOG_WARN("%s: CUDA Domino sample failed rc=%d, falling back to host path\n", __func__, rc);
+        }
+    }
+#endif
+
+    const float * parallel_hidden = llama_get_embeddings_ith(ctx_dft, output_index);
+    const float * base_logits = llama_get_logits_ith(ctx_dft, output_index);
+    GGML_ASSERT(parallel_hidden && "Domino DFlash hidden output missing");
+    GGML_ASSERT(base_logits && "Domino DFlash base logits missing");
+    return llama_dflash_domino_sample(
+            ctx_dft,
+            ctx_tgt,
+            prefix_tokens,
+            n_prefix_tokens,
+            parallel_hidden,
+            base_logits);
 }
 
 

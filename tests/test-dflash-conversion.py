@@ -3,6 +3,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "gguf-py"))
 
 import gguf  # noqa: E402
@@ -123,3 +124,30 @@ def test_normalize_speculators_dflash_tensor_names():
     }
 
     assert actual == expected
+
+
+def test_normalize_domino_dflash_contract():
+    config = {
+        "architectures": ["DFlashDraftModel"],
+        "block_size": 8,
+        "dflash_config": {
+            "mask_token_id": 151669,
+            "target_layer_ids": [1, 9, 17, 25, 33],
+            "projector_type": "domino",
+            "pure_draft_prefix_len": 1,
+            "shift_label": True,
+        },
+        "hidden_size": 2048,
+        "num_hidden_layers": 5,
+        "vocab_size": 151936,
+    }
+
+    normalized = converter.normalize_dflash_config(config)
+
+    assert normalized.projector_type == "domino"
+    assert normalized.pure_draft_prefix_len == 1
+    assert normalized.shift_label is True
+    assert converter.normalize_dflash_tensor_name("prefix_gru.weight_ih_l0") == "domino.prefix_gru.weight_ih_l0"
+    assert converter.normalize_dflash_tensor_name("prefix_gru.weight_hh_l0") == "domino.prefix_gru.weight_hh_l0"
+    assert converter.normalize_dflash_tensor_name("embed_proj.0.weight") == "domino.embed_proj.0.weight"
+    assert converter.normalize_dflash_tensor_name("embed_proj.2.weight") == "domino.embed_proj.2.weight"
