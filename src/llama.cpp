@@ -783,6 +783,15 @@ void llama_context_set_moe_expert_topk(struct llama_context * ctx, int32_t topk)
     }
 }
 
+void llama_context_set_moe_reuse_verify(
+        struct llama_context * ctx,
+        bool enabled,
+        bool runtime_strength) {
+    if (ctx) {
+        ctx->set_moe_reuse_verify(enabled, runtime_strength);
+    }
+}
+
 void llama_set_moe_topk(struct llama_context * ctx, bool enabled) {
     if (ctx) {
         ctx->set_moe_topk_enabled(enabled);

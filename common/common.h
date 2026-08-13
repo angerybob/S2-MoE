@@ -333,6 +333,7 @@ struct common_params {
 
     float   moe_reuse_strength    = -1.0f; // < 0 uses model default
     int32_t moe_reuse_expert_cap  = -1;    // < 0 uses model default
+    bool    moe_reuse_runtime     = false; // derive strength during speculative target verification
 
     // offload params
     std::vector<ggml_backend_dev_t> devices; // devices to use for offloading

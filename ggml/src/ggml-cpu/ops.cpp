@@ -9962,8 +9962,21 @@ void ggml_compute_forward_moe_reuse_two_pass(
 
     const int32_t top_k   = ggml_get_op_params_i32(dst, 0);
     const int32_t cap     = ggml_get_op_params_i32(dst, 1);
-    const float   lambda  = ggml_get_op_params_f32(dst, 2);
+    const bool runtime_strength = ggml_get_op_params_i32(dst, 3) != 0;
+    float lambda = ggml_get_op_params_f32(dst, 2);
     GGML_ASSERT(top_k > 0 && top_k <= ne0);
+
+    if (runtime_strength && top_k < ne0) {
+        float margin_sum = 0.0f;
+        std::vector<float> row(ne0);
+        for (int64_t b = 0; b < ne1; ++b) {
+            const float * src_row = (const float *) ((const char *) src0->data + b * nb1);
+            std::copy(src_row, src_row + ne0, row.begin());
+            std::nth_element(row.begin(), row.begin() + top_k, row.end(), std::greater<float>());
+            margin_sum += *std::max_element(row.begin(), row.end()) - row[top_k];
+        }
+        lambda = margin_sum / (float) ne1;
+    }
 
     const bool no_op = ne1 <= 1 || ne0 <= 1 || lambda <= 0.0f || cap <= 0;
     if (no_op) {

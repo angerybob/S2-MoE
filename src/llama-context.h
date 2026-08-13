@@ -117,6 +117,7 @@ struct llama_context {
     // Main model MoE: force top-k experts per MoE layer (1..n_expert). <=0 = GGUF default.
     void set_moe_expert_topk(int32_t topk);
     int32_t get_moe_expert_topk() const;
+    void set_moe_reuse_verify(bool enabled, bool runtime_strength);
 
     
     // EAGLE3: Store last computed hidden states for draft model access
@@ -344,6 +345,8 @@ private:
     std::vector<int32_t> draft_layer_expert_topk;
     int32_t moe_topk_log_k = -1;
     int32_t moe_expert_topk = -1;
+    bool moe_reuse_enabled = false;
+    bool moe_reuse_runtime = false;
 
     // EAGLE hidden states for target model (stored for draft model usage)
     std::vector<float> target_hidden_states;

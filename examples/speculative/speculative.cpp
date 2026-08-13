@@ -2960,7 +2960,11 @@ int main(int argc, char ** argv) {
                 {
                     NvtxRange r_tgt("actual_verification_decode");
                     layer_profile_begin_step(current_trace.step_idx);
+                    const bool reuse_verify = params.moe_reuse_runtime &&
+                            params.moe_reuse_expert_cap != 0;
+                    llama_context_set_moe_reuse_verify(ctx_tgt, reuse_verify, reuse_verify);
                     llama_decode(ctx_tgt, batch_tgt);
+                    llama_context_set_moe_reuse_verify(ctx_tgt, false, false);
                     layer_profile_end_step();
                 }
                 auto t_end_verify = ggml_time_us();

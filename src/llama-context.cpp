@@ -1565,6 +1565,8 @@ llm_graph_params llama_context::graph_params(
         /*.moe_topk_log_k          =*/ moe_topk_log_k,
         /*.draft_layer_expert_topk =*/ draft_layer_expert_topk,
         /*.moe_expert_topk         =*/ moe_expert_topk,
+        /*.moe_reuse_enabled       =*/ moe_reuse_enabled,
+        /*.moe_reuse_runtime       =*/ moe_reuse_runtime,
     };
 }
 
@@ -3449,6 +3451,11 @@ void llama_context::set_moe_expert_topk(int32_t topk) {
 
 int32_t llama_context::get_moe_expert_topk() const {
     return moe_expert_topk;
+}
+
+void llama_context::set_moe_reuse_verify(bool enabled, bool runtime_strength) {
+    moe_reuse_enabled = enabled;
+    moe_reuse_runtime = enabled && runtime_strength;
 }
 
 

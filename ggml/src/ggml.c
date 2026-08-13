@@ -5013,6 +5013,16 @@ struct ggml_tensor * ggml_moe_reuse_two_pass(
         int                   top_k,
         float                 moe_reuse_strength,
         int                   moe_reuse_expert_cap) {
+    return ggml_moe_reuse_two_pass_runtime(ctx, logits, top_k, moe_reuse_strength, moe_reuse_expert_cap, false);
+}
+
+struct ggml_tensor * ggml_moe_reuse_two_pass_runtime(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * logits,
+        int                   top_k,
+        float                 moe_reuse_strength,
+        int                   moe_reuse_expert_cap,
+        bool                  runtime_strength) {
     GGML_ASSERT(logits->type == GGML_TYPE_F32);
     GGML_ASSERT(top_k > 0);
     GGML_ASSERT(logits->ne[0] >= top_k);
@@ -5020,7 +5030,7 @@ struct ggml_tensor * ggml_moe_reuse_two_pass(
     const int nd = ggml_n_dims(logits);
     struct ggml_tensor * result = ggml_new_tensor(ctx, logits->type, nd, logits->ne);
 
-    int32_t params_i32[2] = { top_k, moe_reuse_expert_cap };
+    int32_t params_i32[4] = { top_k, moe_reuse_expert_cap, 0, runtime_strength ? 1 : 0 };
     ggml_set_op_params(result, params_i32, sizeof(params_i32));
     ggml_set_op_params_f32(result, 2, moe_reuse_strength);
 

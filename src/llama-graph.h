@@ -444,6 +444,8 @@ struct llm_graph_params {
     std::vector<int32_t> draft_layer_expert_topk;
     // Main model MoE: override activated experts per layer (top-k size). <=0 = use GGUF n_expert_used.
     int32_t moe_expert_topk = -1;
+    bool moe_reuse_enabled = false;
+    bool moe_reuse_runtime = false;
 
     // return true if the "other" params would result in a graph with the same topology as with the current params
     //   having the same topology allows us to reuse the graph in some cases
@@ -495,7 +497,9 @@ struct llm_graph_params {
             draft_expert_topk == other.draft_expert_topk &&
             moe_topk_log_k == other.moe_topk_log_k &&
             draft_layer_expert_topk == other.draft_layer_expert_topk &&
-            moe_expert_topk == other.moe_expert_topk;
+            moe_expert_topk == other.moe_expert_topk &&
+            moe_reuse_enabled == other.moe_reuse_enabled &&
+            moe_reuse_runtime == other.moe_reuse_runtime;
     }
 };
 
@@ -681,6 +685,8 @@ struct llm_graph_context {
     const int32_t moe_topk_log_k;
     const std::vector<int32_t> & draft_layer_expert_topk;
     const int32_t moe_expert_topk;
+    const bool moe_reuse_enabled;
+    const bool moe_reuse_runtime;
 
     ggml_context * ctx0 = nullptr;
     ggml_cgraph  * gf   = nullptr;

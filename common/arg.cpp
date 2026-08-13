@@ -2876,6 +2876,13 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_env("LLAMA_ARG_MOE_REUSE_EXPERT_CAP"));
     add_opt(common_arg(
+        {"--moe-reuse-runtime"},
+        "speculative: derive reuse strength from top1 - top(k+1) during parallel target verification",
+        [](common_params & params) {
+            params.moe_reuse_runtime = true;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE}));
+    add_opt(common_arg(
         {"--draft-share-kv"},
         "speculative: enable KV cache sharing between draft and target models (Self-Speculation only)",
         [](common_params & params) {

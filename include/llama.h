@@ -1530,6 +1530,10 @@ extern "C" {
 
     // Main model MoE: override number of routed experts per layer (top-k). <=0 uses GGUF n_expert_used.
     LLAMA_API void llama_context_set_moe_expert_topk(struct llama_context * ctx, int32_t topk);
+    LLAMA_API void llama_context_set_moe_reuse_verify(
+            struct llama_context * ctx,
+            bool                   enabled,
+            bool                   runtime_strength);
 
 
     // EAGLE3: Share token embedding tensor from target model
