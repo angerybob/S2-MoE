@@ -63,6 +63,8 @@ add_library(${TARGET} STATIC
     llguidance.cpp
     log.cpp
     log.h
+    moe-reuse-runtime.cpp
+    moe-reuse-runtime.h
     ngram-cache.cpp
     ngram-cache.h
     regex-partial.cpp

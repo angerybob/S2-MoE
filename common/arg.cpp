@@ -2875,6 +2875,13 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_SPECULATIVE}));    
     add_opt(common_arg(
+        {"--moe-reuse-runtime"},
+        "speculative: derive reuse strength from top1 - top(k+1) during parallel target verification",
+        [](common_params & params) {
+            params.moe_reuse_runtime = true;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE}));
+    add_opt(common_arg(
         {"--acc-log"},
         "print logs for acceptance rate of speculative decoding",
         [](common_params & params) {

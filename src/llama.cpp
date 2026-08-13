@@ -839,6 +839,15 @@ void llama_context_clear_target_hidden_states(struct llama_context * ctx) {
     }
 }
 
+void llama_context_set_moe_reuse_verify(
+        struct llama_context * ctx,
+        bool enabled,
+        bool runtime_strength) {
+    if (ctx) {
+        ctx->set_moe_reuse_verify(enabled, runtime_strength);
+    }
+}
+
 //
 // EAGLE3: Draft model hidden states public API
 //

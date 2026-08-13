@@ -1479,6 +1479,10 @@ extern "C" {
     LLAMA_API size_t llama_context_get_target_hidden_states_size(const struct llama_context * ctx);
     LLAMA_API bool llama_context_has_target_hidden_states(const struct llama_context * ctx);
     LLAMA_API void llama_context_clear_target_hidden_states(struct llama_context * ctx);
+    LLAMA_API void llama_context_set_moe_reuse_verify(
+            struct llama_context * ctx,
+            bool enabled,
+            bool runtime_strength);
 
     // EAGLE3: Draft model's own hidden states management (2560 dims from final layer)
     LLAMA_API void llama_context_set_draft_hidden_states(struct llama_context * ctx, const float * hidden_states, size_t size);

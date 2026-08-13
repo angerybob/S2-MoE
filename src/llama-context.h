@@ -113,6 +113,12 @@ struct llama_context {
     }
     bool is_draft_ctx() const { return is_draft_context; }
 
+    void set_moe_reuse_verify(bool enabled, bool runtime_strength) {
+        moe_reuse_verify_enabled = enabled;
+        moe_reuse_runtime_strength = runtime_strength;
+        graph_reuse_disable = true;
+    }
+
     
     // EAGLE3: Store last computed hidden states for draft model access
     void set_last_hidden_states(const float * hidden_states, size_t hidden_size, int32_t n_tokens);
@@ -332,6 +338,8 @@ private:
     mutable std::vector<int> eagle3_extract_layer_indices;
     mutable std::vector<ggml_tensor *> eagle3_extract_tensors;
     std::vector<float> eagle3_target_features;
+    bool moe_reuse_verify_enabled = false;
+    bool moe_reuse_runtime_strength = false;
 
     // EAGLE3: Last computed hidden states for draft model access
     std::vector<float> last_hidden_states;

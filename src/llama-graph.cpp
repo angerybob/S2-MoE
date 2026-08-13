@@ -590,6 +590,8 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     cross            (params.cross),
     cb_func          (params.cb),
     res              (params.res),
+    moe_reuse_enabled(params.moe_reuse_enabled),
+    moe_reuse_runtime(params.moe_reuse_runtime),
     shared_token_embd(params.shared_token_embd),
     ctx0             (res->get_ctx()),
     gf               (res->get_gf()) {
@@ -917,13 +919,15 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
         cb(logits_base, "ffn_moe_logits_biased", il);
     }
 
-    const bool use_reuse = hparams.moe_reuse_strength > 0.0f &&
+    const bool use_reuse = moe_reuse_enabled &&
+                           (moe_reuse_runtime || hparams.moe_reuse_strength > 0.0f) &&
                            hparams.moe_reuse_expert_cap > 0 &&
                            n_expert > 1 && n_tokens > 1;
 
     logits_sel = logits_base;
     if (use_reuse) {
-        logits_sel = ggml_moe_reuse_two_pass(ctx0, logits_base, n_expert_used, hparams.moe_reuse_strength, hparams.moe_reuse_expert_cap);
+        logits_sel = ggml_moe_reuse_two_pass_runtime(ctx0, logits_base, n_expert_used,
+                hparams.moe_reuse_strength, hparams.moe_reuse_expert_cap, moe_reuse_runtime);
         cb(logits_sel, "ffn_moe_logits_reuse", il);
     }
 

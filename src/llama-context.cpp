@@ -1540,6 +1540,8 @@ llm_graph_params llama_context::graph_params(
         /*.cb                 =*/ cb,
         /*.res                =*/ res,
         /*.shared_token_embd  =*/ shared_token_embd,
+        /*.moe_reuse_enabled  =*/ moe_reuse_verify_enabled,
+        /*.moe_reuse_runtime  =*/ moe_reuse_runtime_strength,
     };
 }
 

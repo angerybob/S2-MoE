@@ -1097,7 +1097,10 @@ int main(int argc, char ** argv) {
             // ==========================================
             llama_set_ssd_cuda_cache_mode(2);
             const int64_t t_decode_tgt_start = ggml_time_us();
+            const bool reuse_verify = params.moe_reuse_runtime && params.moe_reuse_expert_cap != 0;
+            llama_context_set_moe_reuse_verify(ctx_tgt, reuse_verify, reuse_verify);
             llama_decode(ctx_tgt, batch_tgt);
+            llama_context_set_moe_reuse_verify(ctx_tgt, false, false);
             prof.target_decode_us += ggml_time_us() - t_decode_tgt_start;
             prof.target_decode_calls++;
             prof.target_decode_tokens += batch_tgt.n_tokens;

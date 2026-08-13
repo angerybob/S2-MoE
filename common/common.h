@@ -325,6 +325,7 @@ struct common_params {
     int32_t n_expert_used         = -1;    // > 0 overrides model expert_used_count
     int32_t dft_exit_layer = -1;
     std::string gpu_experts_json;
+    bool    moe_reuse_runtime     = false; // derive strength during speculative target verification
 
     // offload params
     std::vector<ggml_backend_dev_t> devices; // devices to use for offloading

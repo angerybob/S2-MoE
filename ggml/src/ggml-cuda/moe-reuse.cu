@@ -10,7 +10,8 @@ static __global__ void moe_reuse_importance_kernel(
         int           n_tokens,
         int           top_k,
         float         lambda,
-        int           cap) {
+        int           cap,
+        int           runtime_strength) {
     const int tid      = threadIdx.x;
     const int threads  = blockDim.x;
 
@@ -20,9 +21,11 @@ static __global__ void moe_reuse_importance_kernel(
     int   * selected  = (int   *)(reduce + threads);
     int   * idx_buf   = selected + threads;
     __shared__ float max_w_raw;
+    __shared__ float effective_lambda;
 
     if (tid == 0) {
         max_w_raw = 0.0f;
+        effective_lambda = lambda;
     }
 
     if (tid < n_experts) {
@@ -30,6 +33,32 @@ static __global__ void moe_reuse_importance_kernel(
     }
     if (tid < threads) {
         selected[tid] = 0;
+    }
+    __syncthreads();
+
+    if (runtime_strength && tid == 0 && top_k < n_experts) {
+        float margin_sum = 0.0f;
+        for (int b = 0; b < n_tokens; ++b) {
+            const float * row = logits + b * n_experts;
+            float top1 = -INFINITY;
+            float top_k_plus_1 = -INFINITY;
+            for (int rank = 0; rank <= top_k; ++rank) {
+                float best = -INFINITY;
+                int best_idx = -1;
+                for (int e = 0; e < n_experts; ++e) {
+                    if (selected[e]) continue;
+                    if (row[e] > best || (row[e] == best && (best_idx < 0 || e < best_idx))) {
+                        best = row[e]; best_idx = e;
+                    }
+                }
+                selected[best_idx] = 1;
+                if (rank == 0) top1 = best;
+                top_k_plus_1 = best;
+            }
+            margin_sum += top1 - top_k_plus_1;
+            for (int e = 0; e < n_experts; ++e) selected[e] = 0;
+        }
+        effective_lambda = margin_sum / (float) n_tokens;
     }
     __syncthreads();
 
@@ -77,7 +106,7 @@ static __global__ void moe_reuse_importance_kernel(
         __syncthreads();
     }
 
-    if (max_w_raw == 0.0f || lambda <= 0.0f || cap <= 0 || n_tokens <= 1 || n_experts <= 1) {
+    if (max_w_raw == 0.0f || effective_lambda <= 0.0f || cap <= 0 || n_tokens <= 1 || n_experts <= 1) {
         if (tid < n_experts) {
             for (int b = 0; b < n_tokens; ++b) {
                 const int idx = b * n_experts + tid;
@@ -126,7 +155,7 @@ static __global__ void moe_reuse_importance_kernel(
     }
 
     if (tid < n_experts) {
-        const float bias = selected[tid] ? lambda : 0.0f;
+        const float bias = selected[tid] ? effective_lambda : 0.0f;
         for (int b = 0; b < n_tokens; ++b) {
             const int idx = b * n_experts + tid;
             out[idx] = logits[idx] + bias;
@@ -151,13 +180,14 @@ void ggml_cuda_op_moe_reuse_two_pass(ggml_backend_cuda_context & ctx, ggml_tenso
     const int top_k   = ggml_get_op_params_i32(dst, 0);
     const int cap     = ggml_get_op_params_i32(dst, 1);
     const float lambda = ggml_get_op_params_f32(dst, 2);
+    const int runtime_strength = ggml_get_op_params_i32(dst, 3);
 
     GGML_ASSERT(top_k > 0 && top_k <= n_experts);
 
     const float * logits_d = (const float *) src0->data;
     float * out_d = (float *) dst->data;
 
-    if (lambda <= 0.0f || cap <= 0 || n_tokens <= 1 || n_experts <= 1) {
+    if ((!runtime_strength && lambda <= 0.0f) || cap <= 0 || n_tokens <= 1 || n_experts <= 1) {
         CUDA_CHECK(cudaMemcpyAsync(out_d, logits_d, sizeof(float) * n_experts * n_tokens,
                     cudaMemcpyDeviceToDevice, ctx.stream()));
         return;
@@ -176,5 +206,5 @@ void ggml_cuda_op_moe_reuse_two_pass(ggml_backend_cuda_context & ctx, ggml_tenso
     const size_t shmem = threads * (2 * sizeof(float) + 2 * sizeof(int));
 
     moe_reuse_importance_kernel<<<grid, block, shmem, ctx.stream()>>>(
-        logits_d, out_d, (int) n_experts, (int) n_tokens, top_k, lambda, cap);
+        logits_d, out_d, (int) n_experts, (int) n_tokens, top_k, lambda, cap, runtime_strength);
 }

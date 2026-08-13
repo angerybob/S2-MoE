@@ -420,6 +420,8 @@ struct llm_graph_params {
 
     // EAGLE3: shared token embedding tensor from target model
     struct ggml_tensor * shared_token_embd = nullptr;
+    bool moe_reuse_enabled = false;
+    bool moe_reuse_runtime = false;
 
     // return true if the "other" params would result in a graph with the same topology as with the current params
     //   having the same topology allows us to reuse the graph in some cases
@@ -463,7 +465,9 @@ struct llm_graph_params {
             loras     == other.loras &&
             cross     == other.cross &&
             n_outputs == other.n_outputs &&
-            shared_token_embd == other.shared_token_embd;
+            shared_token_embd == other.shared_token_embd &&
+            moe_reuse_enabled == other.moe_reuse_enabled &&
+            moe_reuse_runtime == other.moe_reuse_runtime;
     }
 };
 
@@ -618,6 +622,8 @@ struct llm_graph_context {
 
     // EAGLE3: shared token embedding tensor from target model
     struct ggml_tensor * shared_token_embd = nullptr;
+    const bool moe_reuse_enabled;
+    const bool moe_reuse_runtime;
 
     ggml_context * ctx0 = nullptr;
     ggml_cgraph  * gf   = nullptr;

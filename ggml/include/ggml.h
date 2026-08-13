@@ -2184,6 +2184,14 @@ extern "C" {
             float                 moe_reuse_strength,
             int                   moe_reuse_expert_cap);
 
+    GGML_API struct ggml_tensor * ggml_moe_reuse_two_pass_runtime(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * logits,
+            int                   top_k,
+            float                 moe_reuse_strength,
+            int                   moe_reuse_expert_cap,
+            bool                  runtime_strength);
+
 #define GGML_KQ_MASK_PAD 64
 
     // q:    [n_embd_k, n_batch,     n_head,    ne3 ]
