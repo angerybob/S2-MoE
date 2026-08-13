@@ -865,8 +865,6 @@ int main(int argc, char ** argv) {
         int prune_nodes = 0;
         const size_t prune_prob_start = drafts[0].probs.size();
 
-        llama_set_ssd_cuda_cache_mode(1);
-
         // sample n_draft tokens from the draft model using tree-based sampling
         for (int i = 0; i < n_draft; ++i) {
             batch_dft.n_tokens = 0;
@@ -1098,7 +1096,6 @@ int main(int argc, char ** argv) {
             }
             prof.memory_us += ggml_time_us() - t_memory_start;
             // ==========================================
-            llama_set_ssd_cuda_cache_mode(2);
             const int64_t t_decode_tgt_start = ggml_time_us();
             const bool reuse_verify = params.moe_reuse_runtime && params.moe_reuse_expert_cap != 0;
             llama_context_set_moe_reuse_verify(ctx_tgt, reuse_verify, reuse_verify);
@@ -1107,8 +1104,6 @@ int main(int argc, char ** argv) {
             prof.target_decode_us += ggml_time_us() - t_decode_tgt_start;
             prof.target_decode_calls++;
             prof.target_decode_tokens += batch_tgt.n_tokens;
-            llama_clear_ssd_cuda_cache();
-            llama_set_ssd_cuda_cache_mode(0);
             llama_clear_ssd_cache_backend();
             ++n_past_tgt;
         }

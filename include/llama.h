@@ -59,8 +59,6 @@ extern "C" {
     // TODO: show sample usage
     //
     LLAMA_API void llama_clear_ssd_cache_backend(void);
-    LLAMA_API void llama_set_ssd_cuda_cache_mode(int mode);
-    LLAMA_API void llama_clear_ssd_cuda_cache(void);
 
     struct llama_vocab;
     struct llama_model;

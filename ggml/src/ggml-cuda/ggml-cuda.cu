@@ -203,51 +203,12 @@ struct ssd_entry_t {
     size_t dev_size = 0;
 };
 
-struct ssd_spec_cache_entry_t {
-    void * dev_data = nullptr;
-    size_t dev_size = 0;
-};
-
-struct ssd_spec_copy_cache_entry_t {
-    const char * host_data = nullptr;
-    void * dev_data = nullptr;
-    size_t dev_size = 0;
-};
-
 static std::map<std::string, ssd_entry_t> g_ssd_registry;
-static std::map<std::string, ssd_spec_cache_entry_t> g_ssd_spec_cache;
-static std::map<uintptr_t, ssd_spec_copy_cache_entry_t> g_ssd_spec_copy_cache;
 static std::mutex g_ssd_mutex;
 static size_t g_ssd_resident_gpu_count = 0;
 static size_t g_ssd_resident_cpu_fallback_count = 0;
 static size_t g_ssd_cached_gpu_count = 0;
 static size_t g_ssd_cached_gpu_bytes = 0;
-static int g_ssd_cuda_cache_mode = 0; // 0=off, 1=draft_collect, 2=target_use
-static size_t g_ssd_spec_cached_gpu_bytes = 0;
-static size_t g_ssd_spec_cached_gpu_count = 0;
-static size_t g_ssd_spec_cache_hits = 0;
-static size_t g_ssd_spec_cache_misses = 0;
-
-static size_t cuda_moe_spec_cache_budget_bytes() {
-    static const size_t budget = [] {
-        const char * env = getenv("LLAMA_CUDA_MOE_SPEC_CACHE_MB");
-        if (!env) {
-            return (size_t) 4096 * 1024 * 1024;
-        }
-        const long mb = atol(env);
-        return mb > 0 ? (size_t) mb * (size_t) 1024 * (size_t) 1024 : (size_t) 0;
-    }();
-    return budget;
-}
-
-static bool cuda_moe_spec_cache_debug_enabled() {
-    static const bool enabled = [] {
-        const char * env = getenv("LLAMA_CUDA_MOE_SPEC_CACHE_DEBUG");
-        return env && atoi(env) != 0;
-    }();
-    return enabled;
-}
-
 static size_t cuda_moe_cache_budget_bytes() {
     static const size_t budget = [] {
         const char * env = getenv("LLAMA_CUDA_MOE_CACHE_MB");
@@ -266,8 +227,7 @@ static bool cuda_moe_registry_access_enabled() {
         const char * force_staging = getenv("LLAMA_CUDA_MOE_FORCE_STAGING");
         return (use_registry  && atoi(use_registry)  != 0) ||
                (force_staging && atoi(force_staging) != 0) ||
-               cuda_moe_cache_budget_bytes() > 0 ||
-               cuda_moe_spec_cache_budget_bytes() > 0;
+               cuda_moe_cache_budget_bytes() > 0;
     }();
     return enabled;
 }
@@ -309,43 +269,6 @@ static size_t cuda_moe_resident_reserve_bytes() {
 }
 
 extern "C" {
-    void llama_ssd_set_cuda_cache_mode(int mode) {
-        std::lock_guard<std::mutex> lock(g_ssd_mutex);
-        g_ssd_cuda_cache_mode = mode;
-        if (cuda_moe_spec_cache_debug_enabled()) {
-            fprintf(stderr, "CPU MoE offload: spec_cache mode=%d\n", mode);
-        }
-    }
-
-    void llama_ssd_clear_cuda_cache(void) {
-        std::lock_guard<std::mutex> lock(g_ssd_mutex);
-        for (auto & it : g_ssd_spec_cache) {
-            if (it.second.dev_data) {
-                cudaFree(it.second.dev_data);
-            }
-        }
-        for (auto & it : g_ssd_spec_copy_cache) {
-            if (it.second.dev_data) {
-                cudaFree(it.second.dev_data);
-            }
-        }
-        if (cuda_moe_spec_cache_debug_enabled() ||
-            g_ssd_spec_cached_gpu_count > 0 || g_ssd_spec_cache_hits > 0 || g_ssd_spec_cache_misses > 0) {
-            fprintf(stderr,
-                    "CPU MoE offload: spec_cache clear entries=%zu bytes_mib=%.2f hits=%zu misses=%zu\n",
-                    g_ssd_spec_cached_gpu_count,
-                    g_ssd_spec_cached_gpu_bytes / 1048576.0,
-                    g_ssd_spec_cache_hits,
-                    g_ssd_spec_cache_misses);
-        }
-        g_ssd_spec_cache.clear();
-        g_ssd_spec_copy_cache.clear();
-        g_ssd_spec_cached_gpu_bytes = 0;
-        g_ssd_spec_cached_gpu_count = 0;
-        g_ssd_spec_cache_hits = 0;
-        g_ssd_spec_cache_misses = 0;
-    }
-
     void llama_ssd_clear_cache(void) {
         // CPU-memory offload keeps the host registry resident by design.
         // This hook is kept for compatibility with speculative.cpp.
@@ -474,48 +397,6 @@ extern "C" {
         }
         if (it->second.host_data.empty()) {
             return false;
-        }
-
-        if (g_ssd_cuda_cache_mode != 0) {
-            const auto spec_it = g_ssd_spec_cache.find(buf);
-            if (spec_it != g_ssd_spec_cache.end()) {
-                g_ssd_spec_cache_hits++;
-                *data_out = spec_it->second.dev_data;
-                *size_out = spec_it->second.dev_size;
-                *is_device_out = 1;
-                return true;
-            }
-            g_ssd_spec_cache_misses++;
-
-            const size_t spec_budget = cuda_moe_spec_cache_budget_bytes();
-            if (g_ssd_cuda_cache_mode == 1 &&
-                spec_budget > 0 &&
-                g_ssd_spec_cached_gpu_bytes + it->second.host_data.size() <= spec_budget) {
-                size_t free_bytes = 0;
-                size_t total_bytes = 0;
-                if (cudaMemGetInfo(&free_bytes, &total_bytes) == cudaSuccess) {
-                    const size_t reserve = cuda_moe_cache_reserve_bytes();
-                    if (free_bytes > it->second.host_data.size() + reserve) {
-                        void * dev_data = nullptr;
-                        if (cudaMalloc(&dev_data, it->second.host_data.size()) == cudaSuccess) {
-                            cudaError_t err = cudaMemcpy(dev_data, it->second.host_data.data(), it->second.host_data.size(), cudaMemcpyHostToDevice);
-                            if (err == cudaSuccess) {
-                                ssd_spec_cache_entry_t entry;
-                                entry.dev_data = dev_data;
-                                entry.dev_size = it->second.host_data.size();
-                                g_ssd_spec_cache[buf] = entry;
-                                g_ssd_spec_cached_gpu_bytes += entry.dev_size;
-                                g_ssd_spec_cached_gpu_count++;
-                                *data_out = entry.dev_data;
-                                *size_out = entry.dev_size;
-                                *is_device_out = 1;
-                                return true;
-                            }
-                            cudaFree(dev_data);
-                        }
-                    }
-                }
-            }
         }
 
         const size_t cache_budget = cuda_moe_cache_budget_bytes();
@@ -3365,55 +3246,6 @@ static void ggml_backend_cuda_set_tensor_async(ggml_backend_t backend, ggml_tens
 
     GGML_ASSERT(buf->buft == ggml_backend_cuda_buffer_type(cuda_ctx->device) && "unsupported buffer type");
 
-    if (g_ssd_cuda_cache_mode != 0 && size > 0) {
-        const char * host_ptr = (const char *) data;
-        char * dst_ptr = (char *) tensor->data + offset;
-
-        {
-            std::lock_guard<std::mutex> lock(g_ssd_mutex);
-            for (const auto & it : g_ssd_spec_copy_cache) {
-                const auto & entry = it.second;
-                if (host_ptr >= entry.host_data && host_ptr + size <= entry.host_data + entry.dev_size) {
-                    const size_t delta = (size_t) (host_ptr - entry.host_data);
-                    g_ssd_spec_cache_hits++;
-                    CUDA_CHECK(cudaMemcpyAsync(dst_ptr, (const char *) entry.dev_data + delta, size, cudaMemcpyDeviceToDevice, cuda_ctx->stream()));
-                    return;
-                }
-            }
-
-            g_ssd_spec_cache_misses++;
-
-            const size_t spec_budget = cuda_moe_spec_cache_budget_bytes();
-            if (g_ssd_cuda_cache_mode == 1 &&
-                spec_budget > 0 &&
-                g_ssd_spec_cached_gpu_bytes + size <= spec_budget) {
-                size_t free_bytes = 0;
-                size_t total_bytes = 0;
-                if (cudaMemGetInfo(&free_bytes, &total_bytes) == cudaSuccess) {
-                    const size_t reserve = cuda_moe_cache_reserve_bytes();
-                    if (free_bytes > size + reserve) {
-                        void * dev_data = nullptr;
-                        if (cudaMalloc(&dev_data, size) == cudaSuccess) {
-                            cudaError_t err = cudaMemcpyAsync(dev_data, data, size, cudaMemcpyHostToDevice, cuda_ctx->stream());
-                            if (err == cudaSuccess) {
-                                ssd_spec_copy_cache_entry_t entry;
-                                entry.host_data = host_ptr;
-                                entry.dev_data = dev_data;
-                                entry.dev_size = size;
-                                g_ssd_spec_copy_cache[(uintptr_t) host_ptr] = entry;
-                                g_ssd_spec_cached_gpu_bytes += size;
-                                g_ssd_spec_cached_gpu_count++;
-                                CUDA_CHECK(cudaMemcpyAsync(dst_ptr, dev_data, size, cudaMemcpyDeviceToDevice, cuda_ctx->stream()));
-                                return;
-                            }
-                            cudaFree(dev_data);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     CUDA_CHECK(cudaMemcpyAsync((char *)tensor->data + offset, data, size, cudaMemcpyHostToDevice, cuda_ctx->stream()));
 }
 
@@ -3953,15 +3785,6 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
 
 #ifdef USE_CUDA_GRAPH
     static const bool disable_cuda_graphs_due_to_env = (getenv("GGML_CUDA_DISABLE_GRAPHS") != nullptr);
-    if (cuda_moe_spec_cache_debug_enabled()) {
-        static std::atomic<int> printed_graph_state{0};
-        const int idx = printed_graph_state.fetch_add(1);
-        if (idx < 16) {
-            fprintf(stderr, "CPU MoE offload: cuda_graph_compute nodes=%d disable_env=%d\n",
-                    cgraph->n_nodes, disable_cuda_graphs_due_to_env ? 1 : 0);
-        }
-    }
-
     // Objects required for CUDA Graph
     if (cuda_ctx->cuda_graph == nullptr) {
         cuda_ctx->cuda_graph.reset(new ggml_cuda_graph());
@@ -4023,15 +3846,6 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     if (!use_cuda_graph) {
         cuda_ctx->cuda_graph->use_cpy_indirection = false;
     }
-    if (cuda_moe_spec_cache_debug_enabled()) {
-        static std::atomic<int> printed_use_graph{0};
-        const int idx = printed_use_graph.fetch_add(1);
-        if (idx < 16) {
-            fprintf(stderr, "CPU MoE offload: cuda_graph_compute use_cuda_graph=%d update_required=%d\n",
-                    use_cuda_graph ? 1 : 0, cuda_graph_update_required ? 1 : 0);
-        }
-    }
-
 #else
     bool use_cuda_graph = false;
     bool cuda_graph_update_required = false;

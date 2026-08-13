@@ -100,8 +100,6 @@
 extern "C" void ggml_cuda_register_ssd_expert(const char* key, const char* fname, size_t offset, size_t size, int resident);
 extern "C" void ggml_cuda_print_ssd_expert_stats(void);
 extern "C" void llama_ssd_clear_cache(void);
-extern "C" void llama_ssd_set_cuda_cache_mode(int mode);
-extern "C" void llama_ssd_clear_cuda_cache(void);
 extern "C" void ggml_backend_moe_expert_capture_clear(void);
 extern "C" int32_t ggml_backend_moe_expert_capture_get(int32_t * layers, int32_t * experts, int32_t max_items);
 
@@ -168,14 +166,6 @@ void llama_share_kv_cache(struct llama_context * ctx_draft, struct llama_context
 
 void llama_clear_ssd_cache_backend(void) {
     llama_ssd_clear_cache();
-}
-
-void llama_set_ssd_cuda_cache_mode(int mode) {
-    llama_ssd_set_cuda_cache_mode(mode);
-}
-
-void llama_clear_ssd_cuda_cache(void) {
-    llama_ssd_clear_cuda_cache();
 }
 
 void llama_set_moe_topk(struct llama_context * ctx, bool enabled) {
