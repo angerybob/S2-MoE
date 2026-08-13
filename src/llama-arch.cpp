@@ -282,6 +282,9 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
     { LLM_KV_DFLASH_BLOCK_SIZE,          "%s.block_size"         },
     { LLM_KV_DFLASH_MASK_TOKEN_ID,       "%s.mask_token_id"      },
     { LLM_KV_DFLASH_TARGET_LAYERS,       "%s.target_layers"      },
+    { LLM_KV_DFLASH_PROJECTOR_TYPE,      "%s.projector_type"     },
+    { LLM_KV_DFLASH_PURE_DRAFT_PREFIX_LEN, "%s.pure_draft_prefix_len" },
+    { LLM_KV_DFLASH_SHIFT_LABEL,         "%s.shift_label"        },
 };
 
 static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_NAMES = {

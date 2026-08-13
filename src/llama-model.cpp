@@ -6417,6 +6417,44 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                 0);
                     }
 
+                    if (ml.get_tensor_meta("domino.prefix_gru.weight_ih_l0")) {
+                        const ggml_tensor * w_ih = ml.require_tensor_meta("domino.prefix_gru.weight_ih_l0");
+                        const ggml_tensor * w_hh = ml.require_tensor_meta("domino.prefix_gru.weight_hh_l0");
+                        const ggml_tensor * fc1_meta = ml.require_tensor_meta("domino.embed_proj.0.weight");
+                        const ggml_tensor * fc2_meta = ml.require_tensor_meta("domino.embed_proj.2.weight");
+
+                        std::string projector_type;
+                        ml.get_key(LLM_KV_DFLASH_PROJECTOR_TYPE, projector_type, false);
+                        if (!projector_type.empty() && projector_type != "domino") {
+                            throw std::runtime_error("DFlash Domino tensors require projector_type=domino");
+                        }
+                        dflash_domino = true;
+                        dflash_domino_prefix_len = 1;
+                        dflash_domino_shift_label = true;
+                        ml.get_key(LLM_KV_DFLASH_PURE_DRAFT_PREFIX_LEN, dflash_domino_prefix_len, false);
+                        ml.get_key(LLM_KV_DFLASH_SHIFT_LABEL, dflash_domino_shift_label, false);
+                        dflash_domino_gru_w_ih = ml.create_tensor(
+                                ctx_for_buft(pimpl->dev_output.buft_list->front().second),
+                                "domino.prefix_gru.weight_ih_l0",
+                                {w_ih->ne[0], w_ih->ne[1]},
+                                0);
+                        dflash_domino_gru_w_hh = ml.create_tensor(
+                                ctx_for_buft(pimpl->dev_output.buft_list->front().second),
+                                "domino.prefix_gru.weight_hh_l0",
+                                {w_hh->ne[0], w_hh->ne[1]},
+                                0);
+                        dflash_domino_fc1 = ml.create_tensor(
+                                ctx_for_buft(pimpl->dev_output.buft_list->front().second),
+                                "domino.embed_proj.0.weight",
+                                {fc1_meta->ne[0], fc1_meta->ne[1]},
+                                0);
+                        dflash_domino_fc2 = ml.create_tensor(
+                                ctx_for_buft(pimpl->dev_output.buft_list->front().second),
+                                "domino.embed_proj.2.weight",
+                                {fc2_meta->ne[0], fc2_meta->ne[1]},
+                                0);
+                    }
+
                     for (int i = 0; i < n_layer; ++i) {
                         auto & layer = layers[i];
                         layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0);

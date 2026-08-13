@@ -51,6 +51,9 @@ class DFlashConfig:
     draft_vocab_size: int
     decoder_config: dict[str, Any]
     target_model: str | None = None
+    projector_type: str | None = None
+    pure_draft_prefix_len: int = 0
+    shift_label: bool = False
 
 
 def dflash_sliding_window_metadata(config: dict[str, Any]) -> tuple[int, list[bool]] | None:
@@ -73,8 +76,10 @@ def normalize_dflash_config(config: dict[str, Any]) -> DFlashConfig:
     target_model = None
     if isinstance(dflash_config, dict):
         target_layer_ids = dflash_config.get("target_layer_ids")
-        # Z-Lab indexes transformer layers, while llama.cpp captures entries
-        # from the hidden-state tuple where index 0 is the embedding output.
+        # SpecForge/Z-Lab stores transformer layer IDs and the Python reference
+        # reads HF hidden_states[layer_id + 1] (hidden_states[0] is embedding).
+        # llama.cpp captures the input to layer il, so requesting il=layer+1
+        # matches the Python feature after layer `layer`.
         target_layers = [int(layer) + 1 for layer in target_layer_ids] if isinstance(target_layer_ids, list) else []
         mask_token_id = int(dflash_config.get("mask_token_id", -1))
         draft_vocab_size = int(config.get("vocab_size", 0))
@@ -127,6 +132,21 @@ def normalize_dflash_config(config: dict[str, Any]) -> DFlashConfig:
         draft_vocab_size=draft_vocab_size,
         decoder_config=decoder_config,
         target_model=target_model,
+        projector_type=(
+            dflash_config.get("projector_type")
+            if isinstance(dflash_config, dict)
+            else None
+        ),
+        pure_draft_prefix_len=int(
+            dflash_config.get("pure_draft_prefix_len", 0)
+            if isinstance(dflash_config, dict)
+            else 0
+        ),
+        shift_label=bool(
+            dflash_config.get("shift_label", False)
+            if isinstance(dflash_config, dict)
+            else False
+        ),
     )
 
 
@@ -147,6 +167,14 @@ def normalize_dflash_tensor_name(name: str) -> str | None:
         return "enc.output_norm.weight"
     if name == "model.norm.weight":
         return "output_norm.weight"
+    if name == "prefix_gru.weight_ih_l0":
+        return "domino.prefix_gru.weight_ih_l0"
+    if name == "prefix_gru.weight_hh_l0":
+        return "domino.prefix_gru.weight_hh_l0"
+    if name == "embed_proj.0.weight":
+        return "domino.embed_proj.0.weight"
+    if name == "embed_proj.2.weight":
+        return "domino.embed_proj.2.weight"
 
     if name.startswith("layers."):
         name = "model." + name
@@ -3970,6 +3998,19 @@ class DFlashModel(Qwen3Model):
             f"{self.gguf_writer.arch}.draft_vocab_size",
             self.dflash.draft_vocab_size,
         )
+        if self.dflash.projector_type is not None:
+            self.gguf_writer.add_string(
+                f"{self.gguf_writer.arch}.projector_type",
+                self.dflash.projector_type,
+            )
+            self.gguf_writer.add_uint32(
+                f"{self.gguf_writer.arch}.pure_draft_prefix_len",
+                self.dflash.pure_draft_prefix_len,
+            )
+            self.gguf_writer.add_bool(
+                f"{self.gguf_writer.arch}.shift_label",
+                self.dflash.shift_label,
+            )
         if sliding_window := dflash_sliding_window_metadata(self.dflash.decoder_config):
             window, pattern = sliding_window
             self.gguf_writer.add_sliding_window(window)
@@ -3994,6 +4035,13 @@ class DFlashModel(Qwen3Model):
         if name == "fc.weight":
             return [(normalize_dflash_tensor_name(name), data_torch)]
         if name == "hidden_norm.weight":
+            return [(normalize_dflash_tensor_name(name), data_torch)]
+        if name in (
+            "prefix_gru.weight_ih_l0",
+            "prefix_gru.weight_hh_l0",
+            "embed_proj.0.weight",
+            "embed_proj.2.weight",
+        ):
             return [(normalize_dflash_tensor_name(name), data_torch)]
         if name == "lm_head.weight":
             return [("output.weight", data_torch)]

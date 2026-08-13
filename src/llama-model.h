@@ -464,7 +464,15 @@ struct llama_model {
     struct ggml_tensor * target_tok_embd = nullptr;
     struct ggml_tensor * target_output   = nullptr;
 
+    struct ggml_tensor * dflash_domino_gru_w_ih = nullptr;
+    struct ggml_tensor * dflash_domino_gru_w_hh = nullptr;
+    struct ggml_tensor * dflash_domino_fc1      = nullptr;
+    struct ggml_tensor * dflash_domino_fc2      = nullptr;
+
     std::vector<int> dflash_target_layers;
+    bool     dflash_domino = false;
+    uint32_t dflash_domino_prefix_len = 0;
+    bool     dflash_domino_shift_label = false;
 
     // classifier
     struct ggml_tensor * cls       = nullptr;

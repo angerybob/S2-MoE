@@ -575,6 +575,128 @@ extern "C" {
     }
 }
 
+static __device__ __forceinline__ float domino_load_scalar(const void * ptr, int64_t idx, int type) {
+    if (type == GGML_TYPE_F32) return ((const float *) ptr)[idx];
+    if (type == GGML_TYPE_F16) return __half2float(((const half *) ptr)[idx]);
+    if (type == GGML_TYPE_BF16) return __bfloat162float(((const nv_bfloat16 *) ptr)[idx]);
+    return 0.0f;
+}
+
+static __global__ void domino_gru_matvec_kernel(
+        const void * w_ih, const void * w_hh, const void * x, const float * h,
+        int type_w_ih, int type_w_hh, int type_x, int64_t H, int64_t G,
+        float * gi, float * gh) {
+    const int row = blockIdx.x;
+    float sum_i = 0.0f, sum_h = 0.0f;
+    for (int64_t i = threadIdx.x; i < H; i += blockDim.x) {
+        sum_i += domino_load_scalar(w_ih, row * H + i, type_w_ih) * domino_load_scalar(x, i, type_x);
+    }
+    for (int64_t i = threadIdx.x; i < G; i += blockDim.x) {
+        sum_h += domino_load_scalar(w_hh, row * G + i, type_w_hh) * h[i];
+    }
+    __shared__ float red_i[256], red_h[256];
+    red_i[threadIdx.x] = sum_i; red_h[threadIdx.x] = sum_h;
+    __syncthreads();
+    for (int s = 128; s > 0; s >>= 1) {
+        if (threadIdx.x < s) { red_i[threadIdx.x] += red_i[threadIdx.x+s]; red_h[threadIdx.x] += red_h[threadIdx.x+s]; }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0) { gi[row] = red_i[0]; gh[row] = red_h[0]; }
+}
+
+static __global__ void domino_gru_update_kernel(
+        const float * gi, const float * gh, const float * h, int64_t G, float * next) {
+    int64_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= G) return;
+    const float r = 1.0f / (1.0f + expf(-(gi[i] + gh[i])));
+    const float z = 1.0f / (1.0f + expf(-(gi[G+i] + gh[G+i])));
+    const float n = tanhf(gi[2*G+i] + r * gh[2*G+i]);
+    next[i] = (1.0f-z)*n + z*h[i];
+}
+
+static __global__ void domino_fc1_kernel(
+        const void * fc1, const void * hidden, const float * h,
+        int type_fc1, int type_hidden, int64_t H, int64_t G, int64_t E, float * mid) {
+    const int64_t row = blockIdx.x;
+    float sum = 0.0f;
+    const int64_t K = H + G;
+    for (int64_t i = threadIdx.x; i < H; i += blockDim.x)
+        sum += domino_load_scalar(fc1, row*K+i, type_fc1) * domino_load_scalar(hidden, i, type_hidden);
+    for (int64_t i = threadIdx.x; i < G; i += blockDim.x)
+        sum += domino_load_scalar(fc1, row*K+H+i, type_fc1) * h[i];
+    __shared__ float red[256]; red[threadIdx.x] = sum; __syncthreads();
+    for (int s=128; s>0; s>>=1) { if (threadIdx.x<s) red[threadIdx.x]+=red[threadIdx.x+s]; __syncthreads(); }
+    if (threadIdx.x==0 && row<E) mid[row] = red[0] / (1.0f + expf(-red[0]));
+}
+
+static __global__ void domino_fc2_kernel(
+        const void * fc2, const float * mid, int type_fc2, int64_t E, int64_t V, float * scores) {
+    const int64_t row = blockIdx.x;
+    float sum = 0.0f;
+    for (int64_t i=threadIdx.x; i<E; i+=blockDim.x) sum += domino_load_scalar(fc2, row*E+i, type_fc2)*mid[i];
+    __shared__ float red[256]; red[threadIdx.x]=sum; __syncthreads();
+    for (int s=128;s>0;s>>=1) { if(threadIdx.x<s) red[threadIdx.x]+=red[threadIdx.x+s]; __syncthreads(); }
+    if(threadIdx.x==0 && row<V) scores[row] += red[0];
+}
+
+static __global__ void domino_lm_head_kernel(
+        const void * output, const void * hidden, int type_output, int type_hidden,
+        size_t output_stride, int64_t H, int64_t V, float * scores) {
+    const int64_t row=blockIdx.x; float sum=0.0f;
+    const char * wrow=(const char *)output + row*output_stride;
+    for(int64_t i=threadIdx.x;i<H;i+=blockDim.x) sum += domino_load_scalar(wrow,i,type_output)*domino_load_scalar(hidden,i,type_hidden);
+    __shared__ float red[256]; red[threadIdx.x]=sum; __syncthreads();
+    for(int s=128;s>0;s>>=1){if(threadIdx.x<s)red[threadIdx.x]+=red[threadIdx.x+s];__syncthreads();}
+    if(threadIdx.x==0 && row<V)scores[row]=red[0];
+}
+
+static __global__ void domino_argmax_stage1_kernel(
+        const float * scores, int64_t V, float * vals, int32_t * ids) {
+    int64_t idx=blockIdx.x*blockDim.x+threadIdx.x; float v=idx<V?scores[idx]:-INFINITY; int id=(int)idx;
+    __shared__ float sv[256]; __shared__ int si[256]; sv[threadIdx.x]=v; si[threadIdx.x]=id; __syncthreads();
+    for(int s=128;s>0;s>>=1){if(threadIdx.x<s && sv[threadIdx.x+s]>sv[threadIdx.x]){sv[threadIdx.x]=sv[threadIdx.x+s];si[threadIdx.x]=si[threadIdx.x+s];}__syncthreads();}
+    if(threadIdx.x==0){vals[blockIdx.x]=sv[0];ids[blockIdx.x]=si[0];}
+}
+
+static __global__ void domino_argmax_stage2_kernel(
+        const float * vals, const int32_t * ids, int n, int32_t * out) {
+    int idx=threadIdx.x; float v=idx<n?vals[idx]:-INFINITY; int id=idx<n?ids[idx]:-1;
+    __shared__ float sv[512]; __shared__ int si[512]; sv[idx]=v;si[idx]=id;__syncthreads();
+    for(int s=blockDim.x/2;s>0;s>>=1){if(idx<s && sv[idx+s]>sv[idx]){sv[idx]=sv[idx+s];si[idx]=si[idx+s];}__syncthreads();}
+    if(idx==0)*out=si[0];
+}
+
+struct llama_cuda_domino_workspace {
+    void * gru_w_ih=nullptr,*gru_w_hh=nullptr,*fc1=nullptr,*fc2=nullptr,*prefix_embs=nullptr;
+    float *h=nullptr,*next=nullptr,*gi=nullptr,*gh=nullptr,*mid=nullptr,*scores=nullptr,*block_vals=nullptr;
+    int32_t *tokens=nullptr,*block_ids=nullptr,*out_token=nullptr;
+    size_t gru_w_ih_bytes=0,gru_w_hh_bytes=0,fc1_bytes=0,fc2_bytes=0,cap_prefix_emb_bytes=0;
+    const void *gru_w_ih_src=nullptr,*gru_w_hh_src=nullptr,*fc1_src=nullptr,*fc2_src=nullptr;
+    int64_t cap_tokens=0,cap_g=0,cap_e=0,cap_v=0;
+};
+
+static void domino_ensure(void ** p,size_t * cap,size_t n){if(*cap<n){if(*p)CUDA_CHECK(cudaFree(*p));CUDA_CHECK(cudaMalloc(p,n));*cap=n;}}
+static void domino_copy(void **p,size_t*cap,const void**src,const ggml_tensor*t){size_t n=ggml_nbytes(t);domino_ensure(p,cap,n);if(*src!=t->data){CUDA_CHECK(cudaMemcpy(*p,t->data,n,cudaMemcpyDefault));*src=t->data;}}
+
+extern "C" int llama_cuda_domino_sample(
+        const ggml_tensor * te,const ggml_tensor * to,const ggml_tensor * wi,const ggml_tensor * wh,
+        const ggml_tensor * f1,const ggml_tensor * f2,const ggml_tensor * ph,int32_t oi,
+        const int32_t * prefix,int32_t np,bool correction,int32_t * out) {
+    if(!out||!prefix||np<0||oi<0)return -10;
+    const int64_t H=wi->ne[0],G=wh->ne[0],E=f1->ne[1],V=to->ne[1];
+    if(H<=0||G<=0||E<=0||V<=0||oi>=ph->ne[1])return -11;
+    static thread_local llama_cuda_domino_workspace w; cudaStream_t stream=0;
+    if(w.cap_g<G){domino_ensure((void**)&w.h,&w.gru_w_ih_bytes,G*sizeof(float));domino_ensure((void**)&w.next,&w.gru_w_hh_bytes,G*sizeof(float));domino_ensure((void**)&w.gi,&w.fc1_bytes,3*G*sizeof(float));domino_ensure((void**)&w.gh,&w.fc2_bytes,3*G*sizeof(float));w.cap_g=G;}
+    size_t tmp=0; domino_ensure((void**)&w.mid,&tmp,E*sizeof(float)); tmp=0;domino_ensure((void**)&w.scores,&tmp,V*sizeof(float));
+    int blocks=(V+255)/256;tmp=0;domino_ensure((void**)&w.block_vals,&tmp,blocks*sizeof(float));tmp=0;domino_ensure((void**)&w.block_ids,&tmp,blocks*sizeof(int32_t));tmp=0;domino_ensure((void**)&w.out_token,&tmp,sizeof(int32_t));
+    domino_copy(&w.gru_w_ih,&w.gru_w_ih_bytes,&w.gru_w_ih_src,wi);domino_copy(&w.gru_w_hh,&w.gru_w_hh_bytes,&w.gru_w_hh_src,wh);domino_copy(&w.fc1,&w.fc1_bytes,&w.fc1_src,f1);domino_copy(&w.fc2,&w.fc2_bytes,&w.fc2_src,f2);
+    size_t row=H*ggml_type_size(te->type),need=std::max(1,np)*(int64_t)row;domino_ensure(&w.prefix_embs,&w.cap_prefix_emb_bytes,need);CUDA_CHECK(cudaMemsetAsync(w.h,0,G*sizeof(float),stream));
+    for(int p=0;p<np;++p){const char*src=(const char*)te->data+(size_t)prefix[p]*te->nb[1];char*dst=(char*)w.prefix_embs+(size_t)p*row;CUDA_CHECK(cudaMemcpyAsync(dst,src,row,cudaMemcpyDefault,stream));domino_gru_matvec_kernel<<<3*G,256,0,stream>>>(w.gru_w_ih,w.gru_w_hh,dst,w.h,wi->type,wh->type,te->type,H,G,w.gi,w.gh);domino_gru_update_kernel<<<(G+255)/256,256,0,stream>>>(w.gi,w.gh,w.h,G,w.next);std::swap(w.h,w.next);}
+    const char*hidden=(const char*)ph->data+(size_t)oi*ph->nb[1];domino_lm_head_kernel<<<V,256,0,stream>>>(to->data,hidden,to->type,ph->type,to->nb[1],H,V,w.scores);
+    if(correction){domino_fc1_kernel<<<E,256,0,stream>>>(w.fc1,hidden,w.h,f1->type,ph->type,H,G,E,w.mid);domino_fc2_kernel<<<V,256,0,stream>>>(w.fc2,w.mid,f2->type,E,V,w.scores);}
+    domino_argmax_stage1_kernel<<<blocks,256,0,stream>>>(w.scores,V,w.block_vals,w.block_ids);int nt=1;while(nt<blocks)nt<<=1;nt=std::min(nt,512);domino_argmax_stage2_kernel<<<1,nt,0,stream>>>(w.block_vals,w.block_ids,blocks,w.out_token);CUDA_CHECK(cudaMemcpyAsync(out,w.out_token,sizeof(int32_t),cudaMemcpyDeviceToHost,stream));CUDA_CHECK(cudaStreamSynchronize(stream));return 0;
+}
+
 static_assert(sizeof(half) == sizeof(ggml_fp16_t), "wrong fp16 size");
 
 [[noreturn]]
