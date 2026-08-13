@@ -98,6 +98,8 @@ def main():
         cmd.extend(["--moe-reuse-strength", str(moe["reuse_strength"])])
     if "reuse_expert_cap" in moe:
         cmd.extend(["--moe-reuse-expert-cap", str(moe["reuse_expert_cap"])])
+    if moe.get("reuse_runtime", False):
+        cmd.append("--moe-reuse-runtime")
 
     # 7. 解析剪枝参数 (pruning)
     prune = config.get("pruning", {})
