@@ -671,6 +671,8 @@ struct llama_cuda_domino_workspace {
     float *h=nullptr,*next=nullptr,*gi=nullptr,*gh=nullptr,*mid=nullptr,*scores=nullptr,*block_vals=nullptr;
     int32_t *tokens=nullptr,*block_ids=nullptr,*out_token=nullptr;
     size_t gru_w_ih_bytes=0,gru_w_hh_bytes=0,fc1_bytes=0,fc2_bytes=0,cap_prefix_emb_bytes=0;
+    size_t h_bytes=0,next_bytes=0,gi_bytes=0,gh_bytes=0,mid_bytes=0,scores_bytes=0;
+    size_t block_vals_bytes=0,block_ids_bytes=0,out_token_bytes=0;
     const void *gru_w_ih_src=nullptr,*gru_w_hh_src=nullptr,*fc1_src=nullptr,*fc2_src=nullptr;
     int64_t cap_tokens=0,cap_g=0,cap_e=0,cap_v=0;
 };
@@ -686,9 +688,9 @@ extern "C" int llama_cuda_domino_sample(
     const int64_t H=wi->ne[0],G=wh->ne[0],E=f1->ne[1],V=to->ne[1];
     if(H<=0||G<=0||E<=0||V<=0||oi>=ph->ne[1])return -11;
     static thread_local llama_cuda_domino_workspace w; cudaStream_t stream=0;
-    if(w.cap_g<G){domino_ensure((void**)&w.h,&w.gru_w_ih_bytes,G*sizeof(float));domino_ensure((void**)&w.next,&w.gru_w_hh_bytes,G*sizeof(float));domino_ensure((void**)&w.gi,&w.fc1_bytes,3*G*sizeof(float));domino_ensure((void**)&w.gh,&w.fc2_bytes,3*G*sizeof(float));w.cap_g=G;}
-    size_t tmp=0; domino_ensure((void**)&w.mid,&tmp,E*sizeof(float)); tmp=0;domino_ensure((void**)&w.scores,&tmp,V*sizeof(float));
-    int blocks=(V+255)/256;tmp=0;domino_ensure((void**)&w.block_vals,&tmp,blocks*sizeof(float));tmp=0;domino_ensure((void**)&w.block_ids,&tmp,blocks*sizeof(int32_t));tmp=0;domino_ensure((void**)&w.out_token,&tmp,sizeof(int32_t));
+    domino_ensure((void**)&w.h,&w.h_bytes,G*sizeof(float));domino_ensure((void**)&w.next,&w.next_bytes,G*sizeof(float));domino_ensure((void**)&w.gi,&w.gi_bytes,3*G*sizeof(float));domino_ensure((void**)&w.gh,&w.gh_bytes,3*G*sizeof(float));
+    domino_ensure((void**)&w.mid,&w.mid_bytes,E*sizeof(float));domino_ensure((void**)&w.scores,&w.scores_bytes,V*sizeof(float));
+    int blocks=(V+255)/256;domino_ensure((void**)&w.block_vals,&w.block_vals_bytes,blocks*sizeof(float));domino_ensure((void**)&w.block_ids,&w.block_ids_bytes,blocks*sizeof(int32_t));domino_ensure((void**)&w.out_token,&w.out_token_bytes,sizeof(int32_t));
     domino_copy(&w.gru_w_ih,&w.gru_w_ih_bytes,&w.gru_w_ih_src,wi);domino_copy(&w.gru_w_hh,&w.gru_w_hh_bytes,&w.gru_w_hh_src,wh);domino_copy(&w.fc1,&w.fc1_bytes,&w.fc1_src,f1);domino_copy(&w.fc2,&w.fc2_bytes,&w.fc2_src,f2);
     size_t row=H*ggml_type_size(te->type),need=std::max(1,np)*(int64_t)row;domino_ensure(&w.prefix_embs,&w.cap_prefix_emb_bytes,need);CUDA_CHECK(cudaMemsetAsync(w.h,0,G*sizeof(float),stream));
     for(int p=0;p<np;++p){const char*src=(const char*)te->data+(size_t)prefix[p]*te->nb[1];char*dst=(char*)w.prefix_embs+(size_t)p*row;CUDA_CHECK(cudaMemcpyAsync(dst,src,row,cudaMemcpyDefault,stream));domino_gru_matvec_kernel<<<3*G,256,0,stream>>>(w.gru_w_ih,w.gru_w_hh,dst,w.h,wi->type,wh->type,te->type,H,G,w.gi,w.gh);domino_gru_update_kernel<<<(G+255)/256,256,0,stream>>>(w.gi,w.gh,w.h,G,w.next);std::swap(w.h,w.next);}
