@@ -38,6 +38,26 @@ struct common_speculative {
     int32_t dflash_n_embd_dec = 0;
 };
 
+void common_speculative_acceptance_metrics::add(uint32_t accepted, uint32_t drafted) {
+    accepted = std::min(accepted, drafted);
+    ++proposals;
+    accepted_tokens += accepted;
+    accepted_by_position.resize(std::max<size_t>(accepted_by_position.size(), drafted), 0);
+    for (uint32_t position = 0; position < accepted; ++position) {
+        ++accepted_by_position[position];
+    }
+}
+
+double common_speculative_acceptance_metrics::mean_accepted_length() const {
+    return proposals > 0 ? static_cast<double>(accepted_tokens) / proposals : 0.0;
+}
+
+double common_speculative_acceptance_metrics::position_acceptance(size_t position) const {
+    return proposals > 0 && position < accepted_by_position.size()
+        ? static_cast<double>(accepted_by_position[position]) / proposals
+        : 0.0;
+}
+
 struct common_speculative * common_speculative_init(
         struct llama_context * ctx_tgt,
         struct llama_context * ctx_dft) {

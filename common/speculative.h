@@ -12,6 +12,16 @@ struct common_speculative_params {
     float p_min = 0.75f; // min probability required to accept a token in the draft
 };
 
+struct common_speculative_acceptance_metrics {
+    uint64_t proposals = 0;
+    uint64_t accepted_tokens = 0;
+    std::vector<uint64_t> accepted_by_position;
+
+    void add(uint32_t accepted, uint32_t drafted);
+    double mean_accepted_length() const;
+    double position_acceptance(size_t position) const;
+};
+
 struct common_speculative * common_speculative_init(
         struct llama_context * ctx_tgt,
         struct llama_context * ctx_dft
