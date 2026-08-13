@@ -330,16 +330,12 @@ int main(int argc, char ** argv) {
         }
     }
 
-    // This compact example accepts one prompt. Dataset batching belongs to
-    // llama-speculative on the 4090 branch.
-    const std::string dataset_path;
-    const int n_questions_limit = 0;
-    const bool use_dataset = !dataset_path.empty();
+    const bool use_dataset = !params.dataset_path.empty();
     std::ifstream dataset_file;
     if (use_dataset) {
-        dataset_file.open(dataset_path);
+        dataset_file.open(params.dataset_path);
         if (!dataset_file.is_open()) {
-            LOG_ERR("%s: failed to open dataset file: %s\n", __func__, dataset_path.c_str());
+            LOG_ERR("%s: failed to open dataset file: %s\n", __func__, params.dataset_path.c_str());
             return 1;
         }
     } else if (params.prompt.empty()) {
@@ -367,8 +363,8 @@ int main(int argc, char ** argv) {
             if (json_line.empty()) {
                 continue;
             }
-            if (n_questions_limit > 0 && processed_count >= n_questions_limit) {
-                LOG_INF("Reached question limit (%d). Stopping.\n", n_questions_limit);
+            if (params.n_questions_limit > 0 && processed_count >= params.n_questions_limit) {
+                LOG_INF("Reached question limit (%d). Stopping.\n", params.n_questions_limit);
                 break;
             }
             question = extract_json_value(json_line, "question");
