@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 #define LLAMA_MAX_SEQ 256
 
