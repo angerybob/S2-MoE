@@ -749,8 +749,6 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     eagle3           (params.eagle3),
     cb_func          (params.cb),
     res              (params.res),
-    moe_reuse_enabled(params.moe_reuse_enabled),
-    moe_reuse_runtime(params.moe_reuse_runtime),
     shared_token_embd(params.shared_token_embd),
     is_draft_context (params.is_draft_context),
     draft_skip_attn_layers(params.draft_skip_attn_layers),
@@ -759,6 +757,8 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     moe_topk_log_k(params.moe_topk_log_k),
     draft_layer_expert_topk(params.draft_layer_expert_topk),
     moe_expert_topk(params.moe_expert_topk),
+    moe_reuse_enabled(params.moe_reuse_enabled),
+    moe_reuse_runtime(params.moe_reuse_runtime),
     ctx0             (res->get_ctx()),
     gf               (res->get_gf()) {
         res->set_params(params);
