@@ -993,6 +993,16 @@ bool llama_model_dflash_is_domino(const struct llama_model * model) {
     return model && model->arch == LLM_ARCH_DFLASH && model->dflash_domino;
 }
 
+void llama_model_dflash_set_target_model(
+        struct llama_model * model,
+        const struct llama_model * target_model) {
+    if (!model || model->arch != LLM_ARCH_DFLASH || !target_model) {
+        return;
+    }
+    model->target_tok_embd = target_model->tok_embd;
+    model->target_output = target_model->output ? target_model->output : target_model->tok_embd;
+}
+
 uint32_t llama_model_dflash_domino_prefix_len(const struct llama_model * model) {
     return llama_model_dflash_is_domino(model) ? model->dflash_domino_prefix_len : 0;
 }
