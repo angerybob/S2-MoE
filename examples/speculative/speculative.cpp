@@ -329,6 +329,9 @@ int main(int argc, char ** argv) {
         model_dft = llama_init_dft.model.get();
         ctx_dft   = llama_init_dft.context.get();
     }
+    if (params.speculative.dflash) {
+        llama_model_dflash_set_target_model(model_dft, model_tgt);
+    }
 
     if (model_dft == nullptr || ctx_dft == nullptr) {
         LOG_ERR("%s: failed to initialize draft model/context\n", __func__);

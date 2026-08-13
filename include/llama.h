@@ -549,6 +549,9 @@ extern "C" {
     LLAMA_API int32_t llama_model_dflash_block_size(const struct llama_model * model);
     LLAMA_API llama_token llama_model_dflash_mask_token(const struct llama_model * model);
     LLAMA_API uint32_t llama_model_dflash_target_layer_count(const struct llama_model * model);
+    LLAMA_API void llama_model_dflash_set_target_model(
+            struct llama_model * model,
+            const struct llama_model * target_model);
     LLAMA_API bool llama_model_dflash_is_domino(const struct llama_model * model);
     LLAMA_API uint32_t llama_model_dflash_domino_prefix_len(const struct llama_model * model);
     LLAMA_API bool llama_model_dflash_domino_shift_label(const struct llama_model * model);
