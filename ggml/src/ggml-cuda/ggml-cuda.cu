@@ -96,17 +96,10 @@ struct CacheEntry {
 
 // 活跃专家表：Key=offset, Value=Entry
 static std::map<size_t, CacheEntry> g_active_experts; 
-// CUDA 端专家缓存（仅用于 Speculative Draft->Target）
-struct DevCacheEntry {
-    void* ptr;
-    size_t size;
-};
-static std::map<size_t, DevCacheEntry> g_active_experts_dev;
-
 // 内存池：回收的 Buffer
 static std::vector<void*> g_memory_pool;
 static std::mutex g_cache_mutex;
-static std::atomic<int> g_cuda_cache_mode{0}; // 0=off/prefill, 1=draft_collect, 2=target_use
+static std::atomic<int> g_ssd_profile_mode{0}; // 0=prefill, 1=draft, 2=target
 
 struct llama_ssd_profile {
     uint64_t expert_accesses;
@@ -180,20 +173,6 @@ extern "C" {
             g_memory_pool.pop_back();
             cudaFreeHost(ptr);
         }
-    }
-
-    void llama_ssd_set_cuda_cache_mode(int mode) {
-        g_cuda_cache_mode.store(mode, std::memory_order_relaxed);
-    }
-
-    void llama_ssd_clear_cuda_cache() {
-        std::lock_guard<std::mutex> lock(g_cache_mutex);
-        for (auto & kv : g_active_experts_dev) {
-            if (kv.second.ptr) {
-                cudaFree(kv.second.ptr);
-            }
-        }
-        g_active_experts_dev.clear();
     }
 
     void llama_ssd_backend_profile_reset() {
@@ -3207,7 +3186,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
                         g_ssd_profile_read_bytes.fetch_add((uint64_t) size, std::memory_order_relaxed);
                         g_ssd_profile_fetch_us.fetch_add(read_us, std::memory_order_relaxed);
                         llama_ssd_profile_add_read_by_mode(
-                            g_cuda_cache_mode.load(std::memory_order_relaxed),
+                            g_ssd_profile_mode.load(std::memory_order_relaxed),
                             (uint64_t) size,
                             read_us);
                         host_source_ptr = ssd_staging_buffer;
@@ -3765,16 +3744,6 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
 
 //         if (llama_ssd_get_expert(src0->name, (int)i02, fname, &offset, &size, &hot_ptr)) {
 //             is_ssd_mode = true;
-//             if (g_cuda_cache_mode != 0) {
-//                 std::lock_guard<std::mutex> lock(g_cache_mutex);
-//                 auto it_dev = g_active_experts_dev.find(offset);
-//                 if (it_dev != g_active_experts_dev.end()) {
-//                     current_expert_dev = it_dev->second.ptr;
-//                     current_expert_data = it_dev->second.ptr;
-//                     used_dev_cache = true;
-//                     if (prof_enabled) prof_dev_cache_hit++;
-//                 }
-//             }
 //             if (!used_dev_cache && hot_ptr != nullptr) {
 //                 current_expert_data = hot_ptr;
 //                 if (prof_enabled) prof_hot_ptrs++;
@@ -4012,27 +3981,6 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
 
 //         bool need_sync = false;
 //         ggml_cuda_pool_alloc<char> expert_dev_buf;
-
-//         if (is_ssd_mode && current_expert_data != nullptr && !used_dev_cache && g_cuda_cache_mode == 1) {
-//             void * dev_ptr = nullptr;
-//             cudaError_t alloc_err = cudaMalloc(&dev_ptr, size);
-//             if (alloc_err == cudaSuccess && dev_ptr != nullptr) {
-//                 CUDA_CHECK(cudaMemcpyAsync(dev_ptr, current_expert_data, size, cudaMemcpyHostToDevice, stream));
-//                 CUDA_CHECK(cudaStreamSynchronize(stream));
-//                 {
-//                     std::lock_guard<std::mutex> lock(g_cache_mutex);
-//                     g_active_experts_dev[offset] = { dev_ptr, size };
-//                     if (prof_enabled) prof_dev_cache_bytes += size;
-//                 }
-//                 current_expert_dev = dev_ptr;
-//                 used_dev_cache = true;
-//                 prof_dev_cache_miss++;
-//             } else {
-//                 cudaGetLastError();
-//                 if (prof_enabled) prof_dev_cache_alloc_fail++;
-//             }
-//             if (prof_enabled && !used_dev_cache) prof_dev_cache_miss++;
-//         }
 
 //         if (is_ssd_mode && current_expert_data != nullptr && !used_dev_cache) {
 //             bool is_device_ptr = false;

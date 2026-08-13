@@ -77,8 +77,6 @@ extern "C" {
     };
 
     LLAMA_API void llama_clear_ssd_cache_backend(void);
-    LLAMA_API void llama_set_ssd_cuda_cache_mode(int mode);
-    LLAMA_API void llama_clear_ssd_cuda_cache(void);
     LLAMA_API void llama_ssd_profile_reset(void);
     LLAMA_API void llama_ssd_profile_snapshot(struct llama_ssd_profile * profile);
     struct llama_vocab;

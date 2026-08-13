@@ -1399,8 +1399,6 @@ llama_token llama_dflash_domino_sample_gpu(
 
 // 声明 ggml-cuda.cu 里的函数
 extern "C" void llama_ssd_clear_cache(); 
-extern "C" void llama_ssd_set_cuda_cache_mode(int mode);
-extern "C" void llama_ssd_clear_cuda_cache();
 extern "C" void llama_ssd_backend_profile_reset();
 extern "C" void llama_ssd_backend_profile_snapshot(struct llama_ssd_profile * profile);
 
@@ -1410,20 +1408,6 @@ void llama_clear_ssd_cache_backend() {
     // (需要确保编译了 CUDA 后端，否则这里可能会链接错误，可以用 #ifdef GGML_USE_CUDA)
 #ifdef GGML_USE_CUDA
     llama_ssd_clear_cache();
-#endif
-}
-
-void llama_set_ssd_cuda_cache_mode(int mode) {
-#ifdef GGML_USE_CUDA
-    llama_ssd_set_cuda_cache_mode(mode);
-#else
-    (void) mode;
-#endif
-}
-
-void llama_clear_ssd_cuda_cache(void) {
-#ifdef GGML_USE_CUDA
-    llama_ssd_clear_cuda_cache();
 #endif
 }
 

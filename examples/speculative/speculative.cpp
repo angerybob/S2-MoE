@@ -2891,7 +2891,6 @@ int main(int argc, char ** argv) {
             // [新增] 创建当前步的 Trace 对象
             StepTrace current_trace;
             current_trace.step_idx = step_count++;
-            llama_set_ssd_cuda_cache_mode(1);
             if (params.speculative.prune == 0) {
                 NvtxRange r_draft("draft_tree");
                 draft_tree_original(
@@ -2931,8 +2930,6 @@ int main(int argc, char ** argv) {
                     n_drafted,
                     current_trace);
             }
-            llama_set_ssd_cuda_cache_mode(2);
-
             // evaluate the target model on the drafted tokens
             {
                 NvtxRange r_tgt("tgt_decode");
@@ -2987,8 +2984,6 @@ int main(int argc, char ** argv) {
                 current_trace.t_target_verify_us = (t_end_verify - t_start_verify); // 记录延迟
                 total_t_verify_us += current_trace.t_target_verify_us;
                 cascade.on_verify_done(t_end_verify - t_start_verify);
-                llama_clear_ssd_cuda_cache();
-                llama_set_ssd_cuda_cache_mode(0);
                 llama_clear_ssd_cache_backend();
                 // [新增] 填充 Target 信息
                 // batch_tgt 中的 token 顺序对应 draft tree 中的节点顺序
