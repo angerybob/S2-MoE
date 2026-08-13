@@ -330,12 +330,12 @@ int main(int argc, char ** argv) {
         }
     }
 
-    const bool use_dataset = !params.dataset_path.empty();
+    const bool use_dataset = false;
     std::ifstream dataset_file;
     if (use_dataset) {
-        dataset_file.open(params.dataset_path);
+        dataset_file.open(std::string());
         if (!dataset_file.is_open()) {
-            LOG_ERR("%s: failed to open dataset file: %s\n", __func__, params.dataset_path.c_str());
+            LOG_ERR("%s: failed to open dataset file\n", __func__);
             return 1;
         }
     } else if (params.prompt.empty()) {
@@ -362,10 +362,6 @@ int main(int argc, char ** argv) {
             }
             if (json_line.empty()) {
                 continue;
-            }
-            if (params.n_questions_limit > 0 && processed_count >= params.n_questions_limit) {
-                LOG_INF("Reached question limit (%d). Stopping.\n", params.n_questions_limit);
-                break;
             }
             question = extract_json_value(json_line, "question");
             if (question.empty()) {
