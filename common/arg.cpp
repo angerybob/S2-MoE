@@ -2882,6 +2882,20 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_SPECULATIVE}));
     add_opt(common_arg(
+        {"--dataset"}, "PATH",
+        "path to a JSONL dataset",
+        [](common_params & params, const std::string & value) {
+            params.dataset_path = value;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_MAIN}));
+    add_opt(common_arg(
+        {"--n-questions"}, "N",
+        "limit the number of dataset questions to process; -1 processes all",
+        [](common_params & params, const std::string & value) {
+            params.n_questions_limit = std::stoi(value);
+        }
+    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_MAIN}));
+    add_opt(common_arg(
         {"--acc-log"},
         "print logs for acceptance rate of speculative decoding",
         [](common_params & params) {
