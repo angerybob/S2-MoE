@@ -1996,11 +1996,14 @@ int main(int argc, char ** argv) {
 
         // [重要] Draft 小模型通常不需要 SSD Offload，强制关闭以防误伤
         bool old_ssd_setting = params.use_ssd_moe;
+        std::string old_hot_experts_path = params.hot_experts_path;
         params.use_ssd_moe = false; 
+        params.hot_experts_path.clear();
 
         llama_init_dft = common_init_from_params(params);
         
         params.use_ssd_moe = old_ssd_setting; // 恢复设置
+        params.hot_experts_path = std::move(old_hot_experts_path);
 
         model_dft = llama_init_dft.model.get();
         ctx_dft   = llama_init_dft.context.get();
