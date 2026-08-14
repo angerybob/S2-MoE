@@ -14,21 +14,15 @@ Enable `--moe-reuse-runtime` to derive one reuse strength per parallel target
 verification batch from the mean `top1 - top(k+1)` margin. The runtime policy
 is disabled for prefill and ordinary decoding.
 
-The values below are the final absolute reproduction settings. Each model has
-one configuration for this hardware. Use it unchanged for every dataset,
-including RG, SU, TR, and QA; dataset selection changes only the prompt.
-All four configurations use the split-expert target itself as the drafter.
+The row below is a representative profiled example rather than an exhaustive
+model matrix. It uses the split-expert target itself as the drafter.
 
 | Model | Target top-k | Draft top-k | Draft cap/min | Expert cap | TPOT | EPS | Expert MiB | BW MiB/ms |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| DeepSeek-V2-Lite | 6 | 1 | 6/3 | 12 | 415.282392 | 60.581259 | 16.500000 | 0.627667 |
-| OLMoE | 8 | 2 | 9/4 | 10 | 276.243094 | 29.389813 | 12.000000 | 0.865496 |
 | Qwen3-30B-A3B | 8 | 3 | 16/6 | 14 | 1121.076233 | 134.887046 | 9.000000 | 1.562478 |
-| GPT-OSS-120B | 4 | 1 | 6/1 | 6 | 730.994152 | 226.890949 | 12.606811 | 1.013051 |
 
-Use the selected row to fill the uppercase values below. `HOT_EXPERTS_JSON`
-is the profiled resident-expert list for the target model. Repeat the command
-with only `PROMPT_FILE` changed when evaluating another dataset.
+Use the example row to fill the uppercase values below. `HOT_EXPERTS_JSON`
+is the profiled resident-expert list for the target model.
 
 ```bash
 numactl --cpunodebind=1 --membind=1 env \
@@ -51,6 +45,5 @@ numactl --cpunodebind=1 --membind=1 env \
   --ignore-eos
 ```
 
-The measured runs used `GPU_LAYERS=28` for DeepSeek, `99` for OLMoE and
-Qwen3, and `36` for GPT-OSS. Do not add adaptive expert caps, a draft-expert
-cache, or utility-driven draft selection when reproducing these settings.
+The example uses `GPU_LAYERS=99`. Do not add adaptive expert caps, a
+draft-expert cache, or utility-driven draft selection when reproducing it.
