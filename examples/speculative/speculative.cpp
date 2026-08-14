@@ -1677,7 +1677,7 @@ static void draft_tree_prune(
             if (cand.depth > max_depth) {
                 continue;
             }
-            if (budget_used + cand.delta_c > g_prune_config.budget_b) {
+            if (g_prune_config.budget_b > 0.0f && budget_used + cand.delta_c > g_prune_config.budget_b) {
                 continue;
             }
             if (step == 0) {
