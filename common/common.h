@@ -253,6 +253,8 @@ struct common_params_speculative_pruning {
     float expert_bytes  = 32.768f;
     float bandwidth     = 204.8f;
     int   expert_max    = 384;
+    float conf_thresh   = 0.5f;
+    float score_thresh  = 0.8f;
     float routing_noise = 0.0f;
     int   routing_noise_seed = 1;
     int   routing_noise_experts = 0;

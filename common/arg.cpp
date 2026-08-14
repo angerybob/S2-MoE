@@ -4026,6 +4026,20 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_SPECULATIVE}));
     add_opt(common_arg(
+        {"--prune-conf-thresh"}, "F",
+        string_format("pruning: first-step confidence threshold (default: %.2f)", (double) params.sprune.conf_thresh),
+        [](common_params & params, const std::string & value) {
+            params.sprune.conf_thresh = std::stof(value);
+        }
+    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE}));
+    add_opt(common_arg(
+        {"--prune-score-thresh"}, "F",
+        string_format("pruning: later-step score threshold (default: %.2f)", (double) params.sprune.score_thresh),
+        [](common_params & params, const std::string & value) {
+            params.sprune.score_thresh = std::stof(value);
+        }
+    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE}));
+    add_opt(common_arg(
         {"--prune-routing-noise"}, "N",
         string_format("pruning: fraction of predicted expert routes replaced for sensitivity analysis (default: %.2f)",
                       (double) params.sprune.routing_noise),

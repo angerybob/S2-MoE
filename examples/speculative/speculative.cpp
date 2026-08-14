@@ -441,6 +441,8 @@ struct GlobalPruneConfig {
     float expert_bytes  = 32.768f;
     float bandwidth     = 204.8f;
     int   expert_max    = 384;
+    float conf_thresh   = 0.5f;
+    float score_thresh  = 0.8f;
     float routing_noise = 0.0f;
     int   routing_noise_seed = 1;
     int   routing_noise_experts = 0;
@@ -1679,11 +1681,11 @@ static void draft_tree_prune(
                 continue;
             }
             if (step == 0) {
-                if (cand.c_t < 0.5f) {
+                if (g_prune_config.conf_thresh > 0.0f && cand.c_t < g_prune_config.conf_thresh) {
                     continue;
                 }
             } else {
-                if (cand.score < 0.8) {
+                if (cand.score < g_prune_config.score_thresh) {
                     continue;
                 }
             }
@@ -1871,6 +1873,8 @@ int main(int argc, char ** argv) {
     g_prune_config.expert_bytes  = params.sprune.expert_bytes;
     g_prune_config.bandwidth     = params.sprune.bandwidth;
     g_prune_config.expert_max    = params.sprune.expert_max;
+    g_prune_config.conf_thresh   = params.sprune.conf_thresh;
+    g_prune_config.score_thresh  = params.sprune.score_thresh;
     g_prune_config.routing_noise = params.sprune.routing_noise;
     g_prune_config.routing_noise_seed = params.sprune.routing_noise_seed;
     g_prune_config.routing_noise_experts = params.sprune.routing_noise_experts;
