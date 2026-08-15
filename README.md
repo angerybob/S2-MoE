@@ -106,7 +106,7 @@ Representative measurements on Jetson AGX Orin are shown below. Each cell report
 | DeepSeek / 64 GB | 1.32× / 3.08 | 0.87× / 3.29 | **1.60× / 2.50** |
 | OLMoE / 32 GB | 1.23× / 3.15 | 0.82× / 3.71 | **1.87× / 2.56** |
 
-Although DFlash and Domino accept multiple tokens per step, those acceptance lengths do not translate into the end-to-end gains reported for their original server-GPU deployments: independent-drafter overhead offsets much of the benefit in this edge setting.
+Although DFlash and Domino accept multiple tokens per step, those acceptance lengths do not translate into the end-to-end gains reported for their original server-GPU deployments. In this edge setting, the achieved acceptance is insufficient to amortize the measured drafting and verification overhead.
 
 ```bash
 ./build/bin/llama-speculative \
