@@ -50,7 +50,7 @@ cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DLLAMA_BUILD_TESTS=OFF \
   -DLLAMA_BUILD_SERVER=OFF
-cmake --build build --target llama-cli llama-speculative llama-speculative-eagle3 -j
+cmake --build build --target llama-cli llama-speculative -j
 ```
 
 For RTX 4090, check out `4090` and use `-DCMAKE_CUDA_ARCHITECTURES=89`.

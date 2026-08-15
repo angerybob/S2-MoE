@@ -44,7 +44,7 @@ LayerSkip uses the same speculative command as ExpertSkip with a model-specific 
 EAGLE-3 requires a compatible draft GGUF carrying the encoder/decoder metadata and target-layer mapping:
 
 ```bash
-./build/bin/llama-speculative-eagle3 "${COMMON[@]}" \
+./build/bin/llama-speculative "${COMMON[@]}" \
   -md /path/to/eagle3-draft.gguf -ngld 99 \
   --spec-type draft-eagle3 \
   --draft 8 --draft-p-min 0.5
@@ -55,7 +55,7 @@ EAGLE-3 requires a compatible draft GGUF carrying the encoder/decoder metadata a
 Enable Cascade-style test/set selection on top of the EAGLE-3 path:
 
 ```bash
-./build/bin/llama-speculative-eagle3 "${COMMON[@]}" \
+./build/bin/llama-speculative "${COMMON[@]}" \
   -md /path/to/eagle3-draft.gguf -ngld 99 \
   --spec-type draft-eagle3 \
   --draft 8 --draft-p-min 0.5 \
