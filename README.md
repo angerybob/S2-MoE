@@ -31,9 +31,9 @@ The animation replays measured OLMoE decoding traces on a Jetson AGX Orin under 
 
 ## Results at a glance
 
-![Average S²-MoE speedup by model and hardware](media/s2moe/results-at-a-glance.png)
+![Representative S²-MoE speedup on code generation and mathematical reasoning](media/s2moe/results-at-a-glance.png)
 
-The Orin bars average all seven tasks over the 16, 32, and 64 GB memory budgets. The RTX 4090 bars average the same seven tasks. Auto is normalized to 1.0×. See the [paper](paper/s2moe.pdf) for the complete per-task and per-budget results.
+The chart highlights two representative workloads from the complete evaluation: HumanEval code generation (HE) and mathematical reasoning (MA). It reports the paper's end-to-end results for a 16 GB Jetson AGX Orin and a single RTX 4090; Auto is normalized to 1.0×. See the [paper](paper/s2moe.pdf) for all seven tasks and every memory budget.
 
 ## Quick start
 
