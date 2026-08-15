@@ -97,7 +97,7 @@ See [Baseline and decoder commands](docs/baselines.md) for concise commands and 
 
 ## DFlash and Domino
 
-DFlash and Domino are also integrated as additional speculative decoders. They are not counted as Figure 6 paper baselines. Both use `--spec-type draft-dflash`; a Domino draft GGUF is detected from its metadata and automatically selects the Domino sampling path.
+DFlash and Domino are also integrated as additional speculative decoders. They were integrated after the Figure 6 baseline set was finalized and are therefore reported separately. Under the same edge/offloading setup, their gains were generally smaller and less consistent, with several configurations not outperforming autoregressive decoding. Both use `--spec-type draft-dflash`; a Domino draft GGUF is detected from its metadata and automatically selects the Domino sampling path.
 
 ```bash
 ./build/bin/llama-speculative \
