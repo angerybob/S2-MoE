@@ -1,12 +1,35 @@
-# llama.cpp/examples/speculative-simple
+# Native EAGLE3 baseline
 
-Demonstration of basic greedy speculative decoding
+`llama-speculative-eagle3` contains the native EAGLE3 encoder/decoder path. The target context extracts the three layers requested by the draft GGUF metadata, the encoder fuses those features, and the decoder uses confidence-controlled early stopping up to `--draft`.
 
 ```bash
-./bin/llama-speculative-simple \
-    -m  ../models/qwen2.5-32b-coder-instruct/ggml-model-q8_0.gguf \
-    -md ../models/qwen2.5-1.5b-coder-instruct/ggml-model-q4_0.gguf \
-    -f test.txt -c 0 -ngl 99 --color \
-    --sampling-seq k --top-k 1 -fa --temp 0.0 \
-    -ngld 99 --draft-max 16 --draft-min 5 --draft-p-min 0.9
+cmake --build build --target llama-speculative-eagle3 -j
+
+build/bin/llama-speculative-eagle3 \
+  -m /path/to/target.gguf \
+  -md /path/to/eagle3-draft.gguf \
+  --eagle3 -ngl 99 -ngld 99 \
+  --draft 8 --draft-p-min 0.5 \
+  -n 32 -p "Explain speculative decoding."
 ```
+
+For split-expert target GGUFs, add `--ssd-moe` and the same hot-expert/offload options used by the target baseline. Cascade-style draft-width selection can additionally be enabled with `--moe-utility-spec`.
+
+Use `examples/speculative/` and `build/bin/llama-speculative` for S2-MoE, ExpertSkip, LayerSkip, and Cascade-style utility-driven speculation.
+
+## DFlash and Domino
+
+DFlash and Domino use the same native draft-model interface. Pass a compatible
+draft GGUF with `--spec-type draft-dflash`; Domino metadata is detected by the
+loader and automatically selects the Domino GPU sampling path.
+
+```bash
+build/bin/llama-speculative \
+  -m /path/to/target.gguf \
+  -md /path/to/dflash-or-domino-draft.gguf \
+  --spec-type draft-dflash -ngl 99 -ngld 99 \
+  --draft 8 -n 64 -p "Explain speculative decoding."
+```
+
+Dataset evaluation uses the same executable and accepts `--dataset` together
+with `--n-questions`.
