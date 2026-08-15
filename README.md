@@ -99,12 +99,14 @@ See [Baseline and decoder commands](docs/baselines.md) for concise commands and 
 
 DFlash and Domino are also integrated as additional speculative decoders. They are reported separately because, under the same edge/offloading setup, their gains were generally smaller and less consistent, with several configurations not outperforming autoregressive decoding. Both use `--spec-type draft-dflash`; a Domino draft GGUF is detected from its metadata and automatically selects the Domino sampling path.
 
-Representative matched measurements on Jetson AGX Orin are shown below; values are speedups over autoregressive decoding:
+Representative measurements on Jetson AGX Orin are shown below. Each cell reports `speedup / effective acceptance length`, where acceptance length includes the target-generated token:
 
 | Model / memory | DFlash | Domino | S²-MoE |
 | --- | ---: | ---: | ---: |
-| DeepSeek / 64 GB | 1.32× | 0.87× | **1.60×** |
-| OLMoE / 32 GB | 1.23× | 0.82× | **1.87×** |
+| DeepSeek / 64 GB | 1.32× / 3.08 | 0.87× / 3.29 | **1.60× / 2.50** |
+| OLMoE / 32 GB | 1.23× / 3.15 | 0.82× / 3.71 | **1.87× / 2.56** |
+
+Although DFlash and Domino accept multiple tokens per step, those acceptance lengths do not translate into the end-to-end gains reported for their original server-GPU deployments: independent-drafter overhead offsets much of the benefit in this edge setting.
 
 ```bash
 ./build/bin/llama-speculative \
