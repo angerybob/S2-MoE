@@ -39,7 +39,7 @@ LayerSkip uses the same speculative command as ExpertSkip with a model-specific 
   --moe-reuse-strength 0 --moe-reuse-expert-cap 0
 ```
 
-## EAGLE-3
+## [EAGLE-3](https://arxiv.org/abs/2503.01840)
 
 EAGLE-3 requires a compatible draft GGUF carrying the encoder/decoder metadata and target-layer mapping:
 
@@ -50,7 +50,7 @@ EAGLE-3 requires a compatible draft GGUF carrying the encoder/decoder metadata a
   --draft 8 --draft-p-min 0.5
 ```
 
-## Cascade + EAGLE-3
+## [Cascade](https://arxiv.org/abs/2506.20675) + [EAGLE-3](https://arxiv.org/abs/2503.01840)
 
 Enable Cascade-style test/set selection on top of the EAGLE-3 path:
 
@@ -78,7 +78,7 @@ S²-MoE uses the target as a sparse self-drafter, shares KV state, enables routi
 
 Use the complete profiled cost-model arguments from [the speculative decoder guide](../examples/speculative/README.md).
 
-## DFlash and Domino
+## [DFlash](https://arxiv.org/abs/2602.06036) and [Domino](https://arxiv.org/abs/2605.29707)
 
 DFlash requires a compatible draft GGUF with DFlash metadata. Domino uses the same runtime flag; the loader detects Domino metadata and selects its GPU sampling path automatically.
 

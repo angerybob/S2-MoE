@@ -89,15 +89,15 @@ The repository provides runnable paths for the comparison methods used in the pa
 | Auto | Target-only `llama-cli` decoding |
 | ExpertSkip | Sparse self-draft without pruning, reuse gating, or KV sharing |
 | LayerSkip | Model-specific layer-skipped drafter |
-| EAGLE-3 | Native encoder/decoder draft model with confidence stopping |
-| Cascade + EAGLE-3 | EAGLE-3 plus utility-based dynamic draft width |
+| [EAGLE-3](https://arxiv.org/abs/2503.01840) | Native encoder/decoder draft model with confidence stopping |
+| [Cascade](https://arxiv.org/abs/2506.20675) + [EAGLE-3](https://arxiv.org/abs/2503.01840) | EAGLE-3 plus utility-based dynamic draft width |
 | S²-MoE | Routing-aware pruning, runtime reuse gating, and shared KV |
 
 See [Baseline and decoder commands](docs/baselines.md) for concise commands and model requirements.
 
 ## DFlash and Domino
 
-DFlash and Domino are also integrated as additional speculative decoders. They are reported separately because, under the same edge/offloading setup, their gains were generally smaller and less consistent, with several configurations not outperforming autoregressive decoding. Both use `--spec-type draft-dflash`; a Domino draft GGUF is detected from its metadata and automatically selects the Domino sampling path.
+[DFlash](https://arxiv.org/abs/2602.06036) and [Domino](https://arxiv.org/abs/2605.29707) are also integrated as additional speculative decoders. They are reported separately because, under the same edge/offloading setup, their gains were generally smaller and less consistent, with several configurations not outperforming autoregressive decoding. Both use `--spec-type draft-dflash`; a Domino draft GGUF is detected from its metadata and automatically selects the Domino sampling path.
 
 Representative measurements on Jetson AGX Orin are shown below. Each cell reports `speedup / effective acceptance length`, where acceptance length includes the target-generated token:
 
