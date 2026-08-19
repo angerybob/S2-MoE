@@ -2,7 +2,7 @@
 
 ### Efficient self-speculative decoding for Mixture-of-Experts models on edge devices
 
-[![Paper](https://img.shields.io/badge/Paper-PDF-b31b1b.svg)](paper/s2moe.pdf)
+[![Paper](https://img.shields.io/badge/Paper-arXiv-b31b1b.svg)](https://arxiv.org/abs/2608.15018)
 [![Jetson AGX Orin](https://img.shields.io/badge/Hardware-Jetson_AGX_Orin-76b900.svg)](https://github.com/angerybob/S2-MoE/tree/orin)
 [![RTX 4090](https://img.shields.io/badge/Hardware-RTX_4090-76b900.svg)](https://github.com/angerybob/S2-MoE/tree/4090)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -33,7 +33,7 @@ The animation replays measured OLMoE decoding traces on a Jetson AGX Orin under 
 
 ![Representative S²-MoE speedup on code generation and mathematical reasoning](media/s2moe/results-at-a-glance.png)
 
-The chart highlights two representative workloads from the complete evaluation: HumanEval code generation (HE) and mathematical reasoning (MA). It reports the paper's end-to-end results for a 16 GB Jetson AGX Orin and a single RTX 4090; Auto is normalized to 1.0×. See the [paper](paper/s2moe.pdf) for all seven tasks and every memory budget.
+The chart highlights two representative workloads from the complete evaluation: HumanEval code generation (HE) and mathematical reasoning (MA). It reports the paper's end-to-end results for a 16 GB Jetson AGX Orin and a single RTX 4090; Auto is normalized to 1.0×. See the [paper](https://arxiv.org/abs/2608.15018) for all seven tasks and every memory budget.
 
 ## Quick start
 
@@ -119,14 +119,18 @@ In these runs, DFlash and Domino use a block size of 16 (up to 15 draft tokens),
 
 ## Paper and citation
 
-**S²-MoE: Enabling Efficient Self-Speculative Decoding for Mixture-of-Experts on Edge Devices**<br>
+**[S²-MoE: Enabling Efficient Self-Speculative Decoding for Mixture-of-Experts on Edge Devices](https://arxiv.org/abs/2608.15018)**<br>
 Haochen Huang, Shengxuan Qiu, and Meng Li.
 
 ```bibtex
-@article{huang2026s2moe,
-  title   = {S$^2$-MoE: Enabling Efficient Self-Speculative Decoding for Mixture-of-Experts on Edge Devices},
-  author  = {Huang, Haochen and Qiu, Shengxuan and Li, Meng},
-  year    = {2026}
+@misc{huang2026s2moeenablingefficientselfspeculative,
+  title         = {S2-MoE: Enabling Efficient Self-Speculative Decoding for Mixture-of-Experts on Edge Devices},
+  author        = {Haochen Huang and Shengxuan Qiu and Meng Li},
+  year          = {2026},
+  eprint        = {2608.15018},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2608.15018}
 }
 ```
 
