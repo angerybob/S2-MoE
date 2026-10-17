@@ -489,7 +489,7 @@ ggml_tensor * llm_build_qwen3next::build_layer_attn_linear(
     ggml_tensor * alpha_softplus;
     if (model.arch == LLM_ARCH_QWEN35MOE) {
         // max(x, 0) + log(1 + exp(-abs(x))) avoids overflowing exp(x).
-        auto * positive = ggml_clamp(ctx0, alpha_biased, 0.0f, std::numeric_limits<float>::max());
+        auto * positive = ggml_relu(ctx0, alpha_biased);
         auto * tail = ggml_exp(ctx0, ggml_neg(ctx0, ggml_abs(ctx0, alpha_biased)));
         tail = ggml_log(ctx0, ggml_scale_bias(ctx0, tail, 1.0f, 1.0f));
         alpha_softplus = ggml_add(ctx0, positive, tail);
