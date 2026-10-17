@@ -37,7 +37,7 @@ jobs:
             const added = [...after].filter(x => !before.has(x));
             core.notice(JSON.stringify({baseline:before.size,candidate:after.size,added,removed:[...before].filter(x => !after.has(x))}));
             if (added.length) core.setFailed('New lint diagnostics');
-            const checks = await github.paginate(github.rest.checks.listForRef,{...context.repo,ref:'51c4112df',per_page:100});
+            const checks = await github.paginate(github.rest.checks.listForRef,{...context.repo,ref:'fb0fedea3',per_page:100});
             for (const check of checks.filter(c=>c.conclusion==='failure')) {
               try {
                 const id = Number(check.details_url?.match(/job\/(\d+)/)?.[1] || check.html_url.match(/job\/(\d+)/)?.[1]);

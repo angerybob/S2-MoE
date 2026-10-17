@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "llama-context.h"
 
 #include "llama-impl.h"
