@@ -42,8 +42,8 @@ Validation reports will identify the exact reference revision and model hash.
 - Existing Next fixture/state/greedy tests passed 9/9 after graph integration.
 - Real-model Q8_0 CPU AR is now validated against the pinned upstream reference.
   Expert-only drafting audits pass on CPU and CUDA fixtures and the real Q8_0
-  model. Verification-history and self-spec fixture checks now pass; the
-  extended real-model self-spec matrix is pending.
+  model. Verification-history, self-spec fixture checks and the recorded
+  real-model 32-token self-spec matrix now pass.
 
 Pinned reference source: upstream llama.cpp
 `650bf14eb9a922de0f88c9523a271159cc5ae469`.
@@ -114,8 +114,7 @@ state directly, including root-only acceptance and correction continuation.
   and 32, subsequent correction tokens, 64-token prefill, capacity/lifecycle
   misuse, multiple sequences and split verification batches.
 
-The real Q8_0 self-spec matrix is still pending at this commit; no real-model
-self-spec pass is claimed yet. Qwen3.5 SSD/hot-expert loading is explicitly
+The real Q8_0 self-spec matrix passed as recorded below. Qwen3.5 SSD/hot-expert loading is explicitly
 rejected by this entry point until separately qualified. Quantized formats other
 than the recorded Q8_0 model, fused recurrent projections, partial GPU offload,
 full-model CUDA inference, MTP, vision, stochastic sampling and multi-request/tree
@@ -131,3 +130,48 @@ build/bin/llama-speculative-qwen35 -m model.gguf -ngl 0 -p "Explain why the sky 
 Use `tests/validate-qwen3next-real.py` with the Qwen3.5 executable/model and
 `--gpu-layers 0` for the opt-in real-model matrix. The harness is shared with Next;
 it records actual model/binary identities and the verification commit audits.
+
+### Extended real-model self-spec validation
+
+Inference revision: `d7e1ce53aaeb540435d52030d56d7ab398315723`. The model and binary
+were fixed throughout the [real-model matrix](validation/qwen35-real-selfspec-20261017.json).
+Three raw prompts generate 32 tokens each, with draft depth/top-k `(1,1)`, `(4,2)`
+and `(8,4)`, greedy decoding, EOS ignored for fixed-length comparisons, and CPU
+placement on `2x-A100`:
+
+- **9/9** speculative sequences exactly match their AR reference token IDs.
+- The three product AR sequences also match the independently built upstream
+  reference from Gate 1; this comparison uses the recorded token IDs.
+- **21 zero-accept, 8 partial-accept and 65 full-accept rounds** were audited.
+- All native verification-prefix copy audits and accounting checks pass;
+  accepted-prefix replay count is **0**.
+
+| Prompt | Draft depth | Expert top-k | Accepted/proposed | Verification rounds |
+|---|---:|---:|---:|---:|
+| science | 1 | 1 | 12/20 | 20 |
+| science | 4 | 2 | 23/34 | 9 |
+| science | 8 | 4 | 28/28 | 4 |
+| code | 1 | 1 | 12/19 | 19 |
+| code | 4 | 2 | 24/30 | 8 |
+| code | 8 | 4 | 28/28 | 4 |
+| math | 1 | 1 | 14/18 | 18 |
+| math | 4 | 2 | 25/28 | 7 |
+| math | 8 | 4 | 27/37 | 5 |
+
+The measured history-buffer allocations are 125.625 MiB (capacity 2),
+314.0625 MiB (capacity 5), and 565.3125 MiB (capacity 9). Each accepted-prefix
+commit copies 65,863,680 bytes (62.8125 MiB) of recurrent state. Auditing reads
+back additional bytes; snapshots and compatibility-graph buffers are separate
+costs. These are memory/copy measurements, not a throughput benchmark.
+
+A separate [Orin CPU real-model smoke test](validation/qwen35-orin-real-smoke-20261018.json)
+uses the original ggml-org Q8_0 artifact after verifying its published size and
+SHA-256. With 8 output tokens, depth 4/top-k 2, AR and self-spec token IDs match;
+zero/full acceptance and native copy audits pass. This short Orin run does not
+replace the longer 32-token matrix on the x86 CPU host. Full-model CUDA and
+32 GB Orin qualification remain separate work.
+
+The [Qwen3.5 CPU workflow](https://github.com/angerybob/S2-MoE/actions/runs/39051393156)
+passed on the implementation revision. Later report/documentation changes do
+not change inference behavior. This experimental contribution is related to
+issue #1 and does not close it or claim universal equivalence or acceleration.

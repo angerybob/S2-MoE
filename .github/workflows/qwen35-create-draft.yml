@@ -1,0 +1,29 @@
+name: Publish reviewed experimental Qwen3.5 Draft PR
+on:
+  push:
+    branches: [feature/qwen35-hybrid-self-spec]
+    paths: ['.github/workflows/qwen35-create-draft.yml']
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const real = JSON.parse(fs.readFileSync('docs/validation/qwen35-real-selfspec-20261017.json','utf8'));
+            const ar = JSON.parse(fs.readFileSync('docs/validation/qwen35-real-ar-20261017.json','utf8'));
+            const orin = JSON.parse(fs.readFileSync('docs/validation/qwen35-orin-real-smoke-20261018.json','utf8'));
+            if (real.status !== 'passed' || real.coverage.matching !== 9 || ar.status !== 'passed' || ar.coverage.matching !== 6 || !orin.passed) throw new Error('Validation evidence incomplete');
+            const head = 'feature/qwen35-hybrid-self-spec', base = 'orin';
+            const previous = (await github.rest.pulls.list({...context.repo,state:'open',head:context.repo.owner+':'+head,base})).data;
+            const pr = previous[0] || (await github.rest.pulls.create({...context.repo,head,base,draft:true,
+              title:'Add experimental Qwen3.5-MoE hybrid self-speculation',
+              body:fs.readFileSync('.github/qwen35-draft-pr.md','utf8')})).data;
+            core.notice('Qwen3.5 Draft PR: '+pr.html_url);
+            await core.summary.addLink('Qwen3.5 Draft PR',pr.html_url).write();

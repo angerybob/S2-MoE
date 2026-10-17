@@ -2,9 +2,11 @@
 
 This contribution ports the maintainer's earlier Jetson Orin prototype onto the
 public `orin` branch. It adds `qwen3next` GGUF loading and an explicit, limited
-`llama-speculative-next` executable. It does **not** implement Qwen3.5-MoE, the
-`qwen35` pre-tokenizer, or general hybrid-model support. See [issue #1](https://github.com/angerybob/S2-MoE/issues/1)
-for the separate compatibility request.
+`llama-speculative-next` executable, which accepts Qwen3-Next models only.
+Qwen3.5 is a separate experimental entry point; see
+[Qwen3.5 integration and validation](qwen35-hybrid-self-spec.md) and
+[issue #1](https://github.com/angerybob/S2-MoE/issues/1).
+General hybrid-model support is not implied by either integration.
 
 ## Scope
 
@@ -238,4 +240,4 @@ are in the [machine-readable report](validation/qwen3next-80b-20261017.json).
 This extends the earlier four-token smoke test for these three prompts and
 configurations. It remains a correctness check for the tested 80B checkpoint and
 conditions, not a performance benchmark or proof of all-input/all-backend
-equivalence. Qwen3.5-MoE remains outside this PR.
+equivalence. These Next results do not qualify Qwen3.5-MoE; see its separate validation record.

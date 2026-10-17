@@ -1,0 +1,55 @@
+{
+  "model": {
+    "verified": true,
+    "repository": "ggml-org/Qwen3.5-35B-A3B-GGUF",
+    "revision": "3127ef0b7fd4f12626506419ceefde54fa8db53c",
+    "filename": "Qwen3.5-35B-A3B-Q8_0.gguf",
+    "size": 36903139584,
+    "sha256": "8a83fbfde74b0366feb76b075c10df46bbece6aa21ed14a6f291a7904f2b7d67"
+  },
+  "settings": {
+    "tokens": 8,
+    "gpu_layers": 0,
+    "context": 128,
+    "ubatch": 9,
+    "threads": 4,
+    "depth": 4,
+    "topk": 2,
+    "address_space_limit_gib": 42,
+    "prompt": "Explain why the sky looks blue.",
+    "ignore_eos": true,
+    "raw_prompts": true
+  },
+  "cases": [
+    {
+      "mode": "ar",
+      "exit_code": 0,
+      "tokens": [
+        271,
+        248068,
+        271,
+        248069,
+        271,
+        760,
+        12515,
+        7701
+      ]
+    },
+    {
+      "mode": "spec",
+      "exit_code": 0,
+      "tokens": [
+        271,
+        248068,
+        271,
+        248069,
+        271,
+        760,
+        12515,
+        7701
+      ]
+    }
+  ],
+  "passed": true,
+  "source_revision": "d7e1ce53aaeb540435d52030d56d7ab398315723"
+}

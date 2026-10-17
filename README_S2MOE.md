@@ -5,7 +5,15 @@
 `llama-speculative-next` adds a limited greedy, expert-sparse self-draft path for
 Qwen3-Next with shared hybrid memory and verification-prefix recurrent history.
 See [usage, state semantics, tests, limitations, and memory costs](docs/qwen3next-self-spec.md).
-Qwen3.5-MoE and its tokenizer are not supported by this contribution.
+Qwen3.5-MoE uses the separate experimental integration below.
+
+## Experimental Qwen3.5-MoE
+
+`llama-speculative-qwen35` supports the recorded text-only `qwen35moe` GGUF
+layouts and `qwen35` tokenizer, expert-only drafting, shared-state snapshots and
+verification-prefix history. The 35B-A3B Q8_0 CPU matrix passes 9/9 32-token
+comparisons. This is one-request, one-chain greedy decoding with no speedup claim.
+See [usage, staged correctness checks and unsupported modes](docs/qwen35-hybrid-self-spec.md).
 
 ## Build
 

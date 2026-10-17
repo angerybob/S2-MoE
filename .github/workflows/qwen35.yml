@@ -35,7 +35,6 @@ jobs:
         run: |
           python candidate/tests/make-qwen3next-fixture.py candidate/build-qwen35/qwen35-tiny-f32.gguf f32 qwen35moe
           python candidate/tests/validate-qwen35-ar.py --candidate candidate/build-qwen35/bin/test-qwen35-ar --reference upstream/build-cpu/bin/qwen35-ar-reference --reference-revision 650bf14eb9a922de0f88c9523a271159cc5ae469 --model candidate/build-qwen35/qwen35-tiny-f32.gguf --output candidate/build-qwen35/ar-reference-results
-          candidate/build-qwen35/bin/test-qwen35-expert-draft candidate/build-qwen35/qwen35-tiny-f32.gguf 0
           ctest --test-dir candidate/build-qwen35 -R "qwen3next|qwen35" --output-on-failure
       - uses: actions/upload-artifact@v4
         if: always()
