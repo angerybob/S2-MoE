@@ -1,56 +1,41 @@
-name: Publish Next progress and inspect CI failures
+name: Inspect Next premerge CI evidence
 on:
   push:
     branches: [feature/qwen3next-self-spec]
     paths: ['.github/workflows/qwen3next-review-progress.yml']
 permissions:
   contents: read
-  issues: write
   actions: read
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          path: candidate
-      - uses: actions/checkout@v4
-        with:
-          ref: 48e952cfc48862b943f409d5374802e4a771dbb5
-          path: baseline
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Publish authorized Issue 1 update and collect existing CI logs
-        uses: actions/github-script@v7
+          github-token: ${{ github.token }}
+          run-id: 39042007097
+          name: next-premerge-ci-evidence
+          path: evidence
+      - uses: actions/github-script@v7
         with:
           script: |
             const fs = require('node:fs');
-            const marker = '<!-- qwen3next-progress-pr2-20261017 -->';
-            const comments = await github.paginate(github.rest.issues.listComments, {...context.repo, issue_number: 1});
-            const existing = comments.find(c => c.body?.includes(marker));
-            const body = fs.readFileSync('candidate/.github/qwen3next-issue-progress.md','utf8');
-            const comment = existing || (await github.rest.issues.createComment({...context.repo, issue_number: 1, body})).data;
-            core.notice('Issue progress: ' + comment.html_url);
-            await core.summary.addLink('Issue progress',comment.html_url).write();
-            fs.mkdirSync('ci-evidence',{recursive:true});
-            for (const [name,id] of [['lint',117422497008],['asan',117422810952]]) {
-              try {
-                const logs = await github.rest.actions.downloadJobLogsForWorkflowRun({...context.repo,job_id:id});
-                fs.writeFileSync('ci-evidence/'+name+'.log',typeof logs.data === 'string' ? logs.data : Buffer.from(logs.data));
-              } catch(e) {fs.writeFileSync('ci-evidence/'+name+'-error.txt',String(e));}
+            const read = p => fs.readFileSync('evidence/'+p,'utf8');
+            const lines = p => read(p).trim().split('\n').filter(Boolean);
+            const before = new Set(lines('baseline-lint.txt'));
+            const after = new Set(lines('candidate-lint.txt'));
+            const added = [...after].filter(x => !before.has(x));
+            const removed = [...before].filter(x => !after.has(x));
+            core.notice(JSON.stringify({baseline:before.size,candidate:after.size,added,removed}));
+            for (const name of ['lint','asan']) {
+              const p = fs.existsSync('evidence/'+name+'.log') ? name+'.log' : name+'-error.txt';
+              const all = lines(p);
+              const errors = new Set();
+              for (let i=0;i<all.length;i++) {
+                if (/error:|fatal error|Error |FAILED|ERROR|undefined reference|No rule to make|Error at|not found|E[0-9]{3}|F[0-9]{3}|T[0-9]{3}/i.test(all[i])) {
+                  for (let k=Math.max(0,i-1);k<=Math.min(all.length-1,i+1);k++) errors.add(all[k]);
+                }
+              }
+              core.notice(name + ': ' + ([...errors].join('\n') || all.join('\n')).slice(-18000));
             }
-      - name: Compare baseline and candidate lint in one dependency environment
-        run: |
-          python -m pip install flake8 flake8-no-print
-          python -m pip freeze > ci-evidence/pip-freeze.txt
-          set +e
-          (cd baseline && python -m flake8) > ci-evidence/baseline-lint.txt 2>&1
-          (cd candidate && python -m flake8) > ci-evidence/candidate-lint.txt 2>&1
-          exit 0
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: next-premerge-ci-evidence
-          path: ci-evidence
