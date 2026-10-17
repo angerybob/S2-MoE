@@ -1,5 +1,9 @@
 llama_add_compile_flags()
 
+add_executable(test-qwen35-ar qwen35-reference-ar.cpp)
+target_link_libraries(test-qwen35-ar PRIVATE llama)
+target_compile_features(test-qwen35-ar PRIVATE cxx_std_17)
+
 # Experimental Qwen3-Next tests use deterministic random weights, not downloads.
 if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
 add_executable(test-qwen3next-state test-qwen3next-state.cpp)

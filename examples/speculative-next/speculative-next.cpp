@@ -15,13 +15,21 @@ struct options {
 
 static void usage(const char * exe) {
     std::fprintf(stderr,
+#ifdef LLAMA_EXPERIMENTAL_QWEN35
+        "Experimental Qwen3.5-MoE text-only AR; currently requires --ar\n"
+#else
         "Experimental greedy Qwen3-Next expert-only self-speculation\n"
+#endif
         "Usage: %s -m model.gguf [-p prompt] [-n 32] [-ngl 99] [-c 512] [-ub 32]\n"
         "       [--draft-max 8] [--draft-expert-topk 2] [--ssd-moe] [--hot-experts file]\n"
         "       [--audit-state-copies] [--ar] [--tokens-file file] [--ignore-eos] [-t 8]\n"
         "One request/branch, shared hybrid memory, raw prompt, greedy sampling only.\n"
         "All recurrent/full-attention layers and shared experts remain active.\n"
+#ifdef LLAMA_EXPERIMENTAL_QWEN35
+        "CUDA graphs and graph reuse are disabled. Vision/MTP are unsupported.\n", exe);
+#else
         "CUDA graphs and graph reuse are disabled automatically. Qwen3.5 is unsupported.\n", exe);
+#endif
 }
 
 static options parse(int argc, char ** argv) {
@@ -68,6 +76,9 @@ static options parse(int argc, char ** argv) {
 }
 
 static int run(const options & o) {
+#ifdef LLAMA_EXPERIMENTAL_QWEN35
+    next_spec::require(o.ar, "Qwen3.5 is currently AR-only; draft and history gates have not passed");
+#endif
     next_spec::disable_graphs();
     llama_backend_init();
     ggml_backend_load_all();
@@ -84,7 +95,11 @@ static int run(const options & o) {
     next_spec::require(model != nullptr, "model loading failed");
     char arch[64] = {};
     llama_model_meta_val_str(model.get(), "general.architecture", arch, sizeof(arch));
+#ifdef LLAMA_EXPERIMENTAL_QWEN35
+    next_spec::require(std::string(arch) == "qwen35moe", "this executable only supports qwen35moe GGUF models");
+#else
     next_spec::require(std::string(arch) == "qwen3next", "this executable only supports qwen3next GGUF models");
+#endif
     auto cp = llama_context_default_params();
     cp.n_ctx = o.context;
     cp.n_batch = std::max(64, o.ubatch);
@@ -196,7 +211,11 @@ int main(int argc, char ** argv) {
     }
     try { return run(parse(argc, argv)); }
     catch (const std::exception & error) {
+#ifdef LLAMA_EXPERIMENTAL_QWEN35
+        std::fprintf(stderr, "llama-speculative-qwen35: %s\n", error.what());
+#else
         std::fprintf(stderr, "llama-speculative-next: %s\n", error.what());
+#endif
         return 1;
     }
 }

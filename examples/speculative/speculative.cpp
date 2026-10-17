@@ -1936,9 +1936,12 @@ int main(int argc, char ** argv) {
     if (model_tgt) {
         char architecture[64] = {};
         llama_model_meta_val_str(model_tgt, "general.architecture", architecture, sizeof(architecture));
-        if (std::string(architecture) == "qwen3next") {
-            LOG_ERR("Qwen3-Next requires the experimental llama-speculative-next executable; "
-                    "this tree decoder does not rewind recurrent state. See docs/qwen3next-self-spec.md\n");
+        if (std::string(architecture) == "qwen3next" || std::string(architecture) == "qwen35moe") {
+            const bool qwen35 = std::string(architecture) == "qwen35moe";
+            LOG_ERR("%s requires the experimental %s executable; this tree decoder does not rewind "
+                    "recurrent state. See docs/%s\n", architecture,
+                    qwen35 ? "llama-speculative-qwen35" : "llama-speculative-next",
+                    qwen35 ? "qwen35-hybrid-self-spec.md" : "qwen3next-self-spec.md");
             return 1;
         }
     }

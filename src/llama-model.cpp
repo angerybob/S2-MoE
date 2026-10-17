@@ -2083,6 +2083,7 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                 }
             } break;
         case LLM_ARCH_QWEN3NEXT:
+        case LLM_ARCH_QWEN35MOE:
             {
                 ml.get_key(LLM_KV_EXPERT_FEED_FORWARD_LENGTH,        hparams.n_ff_exp, false);
                 ml.get_key(LLM_KV_EXPERT_SHARED_FEED_FORWARD_LENGTH, hparams.n_ff_shexp, false);
@@ -2094,8 +2095,23 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                 ml.get_key(LLM_KV_SSM_TIME_STEP_RANK, hparams.ssm_dt_rank);
                 ml.get_key(LLM_KV_SSM_GROUP_COUNT,    hparams.ssm_n_group);
 
+                uint32_t full_attention_interval = 4;
+                if (arch == LLM_ARCH_QWEN35MOE) {
+                    ml.get_key("qwen35moe.full_attention_interval", full_attention_interval, false);
+                    ml.get_key_or_arr(LLM_KV_ROPE_DIMENSION_SECTIONS, hparams.rope_sections, 4, true);
+                    // Text positions share T/H/W, while the extra vision axis is
+                    // zero. NEOX is equivalent only when T/H/W cover every pair.
+                    for (uint32_t pair = 0; pair < hparams.n_rot / 2; ++pair) {
+                        if (int64_t(pair) >= 3ll * hparams.rope_sections[pair % 3]) {
+                            throw std::runtime_error("unsupported text IMRoPE sections: T/H/W must cover every rotary pair");
+                        }
+                    }
+                }
+                if (full_attention_interval == 0) {
+                    throw std::runtime_error("full_attention_interval must be positive");
+                }
                 for (uint32_t i = 0; i < hparams.n_layer; ++i) {
-                    hparams.recurrent_layer_arr[i] = ((i + 1) % 4 != 0);
+                    hparams.recurrent_layer_arr[i] = ((i + 1) % full_attention_interval != 0);
                 }
 
                 switch (hparams.n_layer) {
@@ -6566,6 +6582,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     }
                 } break;
             case LLM_ARCH_QWEN3NEXT:
+            case LLM_ARCH_QWEN35MOE:
                 {
                     tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), { n_embd, n_vocab }, 0);
 
@@ -6615,7 +6632,12 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                             layer.ssm_conv1d     = create_tensor(tn(LLM_TENSOR_SSM_CONV1D,     "weight", i), { hparams.ssm_d_conv, conv_dim }, 0);
                             layer.ssm_dt         = create_tensor(tn(LLM_TENSOR_SSM_DT,         "bias",   i), { hparams.ssm_dt_rank }, 0);
                             layer.ssm_a          = create_tensor(tn(LLM_TENSOR_SSM_A,          i), { hparams.ssm_dt_rank }, 0);
-                            layer.ssm_beta_alpha = create_tensor(tn(LLM_TENSOR_SSM_BETA_ALPHA, "weight", i), { n_embd, ba_dim }, 0);
+                            if (arch == LLM_ARCH_QWEN35MOE) {
+                                layer.ssm_alpha = create_tensor(tn(LLM_TENSOR_SSM_ALPHA, "weight", i), { n_embd, hparams.ssm_dt_rank }, 0);
+                                layer.ssm_beta = create_tensor(tn(LLM_TENSOR_SSM_BETA, "weight", i), { n_embd, hparams.ssm_dt_rank }, 0);
+                            } else {
+                                layer.ssm_beta_alpha = create_tensor(tn(LLM_TENSOR_SSM_BETA_ALPHA, "weight", i), { n_embd, ba_dim }, 0);
+                            }
                             layer.ssm_norm       = create_tensor(tn(LLM_TENSOR_SSM_NORM,       "weight", i), { head_v_dim }, 0);
                             layer.ssm_out        = create_tensor(tn(LLM_TENSOR_SSM_OUT,        "weight", i), { value_dim, n_embd }, 0);
                         }
@@ -6846,7 +6868,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
 
     // SSD-cold Next experts must remain demand-paged. Eagerly populating the
     // whole 80B mapping defeats offloading and can exhaust unified memory.
-    const bool prefetch_mmaps = !(arch == LLM_ARCH_QWEN3NEXT && ml.use_ssd_moe);
+    const bool prefetch_mmaps = !(llm_arch_is_qwen_delta_net(arch) && ml.use_ssd_moe);
     ml.init_mappings(prefetch_mmaps, use_mlock ? &pimpl->mlock_mmaps : nullptr);
     pimpl->mappings.reserve(ml.mappings.size());
 
@@ -7186,7 +7208,7 @@ void llama_model::print_info() const {
         arch == LLM_ARCH_PLAMO2 ||
         arch == LLM_ARCH_GRANITE_HYBRID ||
         arch == LLM_ARCH_NEMOTRON_H ||
-        arch == LLM_ARCH_QWEN3NEXT) {
+        llm_arch_is_qwen_delta_net(arch)) {
         LLAMA_LOG_INFO("%s: ssm_d_conv       = %u\n",     __func__, hparams.ssm_d_conv);
         LLAMA_LOG_INFO("%s: ssm_d_inner      = %u\n",     __func__, hparams.ssm_d_inner);
         LLAMA_LOG_INFO("%s: ssm_d_state      = %u\n",     __func__, hparams.ssm_d_state);
@@ -21390,6 +21412,7 @@ ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
                 llm = std::make_unique<llm_build_apertus>(*this, params);
             } break;
         case LLM_ARCH_QWEN3NEXT:
+        case LLM_ARCH_QWEN35MOE:
             {
                 llm = std::make_unique<llm_build_qwen3next>(*this, params);
             } break;
@@ -21602,6 +21625,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
         case LLM_ARCH_QWEN3:
         case LLM_ARCH_QWEN3MOE:
         case LLM_ARCH_QWEN3NEXT:
+        case LLM_ARCH_QWEN35MOE:
         case LLM_ARCH_DFLASH:
         case LLM_ARCH_EAGLE:
         case LLM_ARCH_LLADA_MOE:
