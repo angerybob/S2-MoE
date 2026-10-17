@@ -1,0 +1,88 @@
+{
+  "source": "existing Qwen3.5-35B-A3B HF snapshot on 2x-A100",
+  "converter_revision": "650bf14eb9a922de0f88c9523a271159cc5ae469",
+  "outtype": "q8_0",
+  "shards": [
+    {
+      "name": "model.safetensors-00001-of-00014.safetensors",
+      "bytes": 5368709816,
+      "mtime_ns": 1781340438502564673
+    },
+    {
+      "name": "model.safetensors-00002-of-00014.safetensors",
+      "bytes": 5368709808,
+      "mtime_ns": 1781341818101561695
+    },
+    {
+      "name": "model.safetensors-00003-of-00014.safetensors",
+      "bytes": 5368709808,
+      "mtime_ns": 1781341985012384628
+    },
+    {
+      "name": "model.safetensors-00004-of-00014.safetensors",
+      "bytes": 5368709816,
+      "mtime_ns": 1781342878400951732
+    },
+    {
+      "name": "model.safetensors-00005-of-00014.safetensors",
+      "bytes": 5368709816,
+      "mtime_ns": 1781340289687982142
+    },
+    {
+      "name": "model.safetensors-00006-of-00014.safetensors",
+      "bytes": 5368709816,
+      "mtime_ns": 1781339987202695842
+    },
+    {
+      "name": "model.safetensors-00007-of-00014.safetensors",
+      "bytes": 5368709808,
+      "mtime_ns": 1781342030332046777
+    },
+    {
+      "name": "model.safetensors-00008-of-00014.safetensors",
+      "bytes": 5368709808,
+      "mtime_ns": 1781341710490251383
+    },
+    {
+      "name": "model.safetensors-00009-of-00014.safetensors",
+      "bytes": 5255463936,
+      "mtime_ns": 1781342309581839456
+    },
+    {
+      "name": "model.safetensors-00010-of-00014.safetensors",
+      "bytes": 5368710456,
+      "mtime_ns": 1781342820801460601
+    },
+    {
+      "name": "model.safetensors-00011-of-00014.safetensors",
+      "bytes": 5368710464,
+      "mtime_ns": 1781342979976049561
+    },
+    {
+      "name": "model.safetensors-00012-of-00014.safetensors",
+      "bytes": 5368710456,
+      "mtime_ns": 1781343617239601831
+    },
+    {
+      "name": "model.safetensors-00013-of-00014.safetensors",
+      "bytes": 5367839544,
+      "mtime_ns": 1781343570647938644
+    },
+    {
+      "name": "model.safetensors-00014-of-00014.safetensors",
+      "bytes": 2224764664,
+      "mtime_ns": 1781343106006923102
+    }
+  ],
+  "metadata": {
+    "config.json": "5e4d7f74fec2f360eb9cfbfcd6ec0c4c76e684d3a11caaed259d9fd9bfbc7944",
+    "model.safetensors.index.json": "d8d0b7ca4e61ae107e3e87a3ff21136b3ac7c789e64bb24267227ca804e04205",
+    "tokenizer.json": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42"
+  },
+  "output": {
+    "name": "Qwen3.5-35B-A3B-local-Q8_0-20261017.gguf",
+    "size_bytes": 36903139904,
+    "sha256": "f23b26ea23f30a491728b1e4448f22e1bcbe69805bba8618f2277f18ac3cdaea"
+  },
+  "status": "converted and AR-validated"
+}

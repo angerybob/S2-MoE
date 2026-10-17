@@ -39,9 +39,9 @@ Validation reports will identify the exact reference revision and model hash.
 - A 40-token F32 random-weight fixture case matches upstream greedy choices.
   The independent three-prompt regression matrix is run by `qwen35.yml`.
 - Existing Next fixture/state/greedy tests passed 9/9 after graph integration.
-- Full real-model Qwen3.5 AR, expert drafting and verification-history acceptance
-  are **not yet qualified**. The real model is still being downloaded and will
-  be hash-verified before inference.
+- Real-model Q8_0 CPU AR is now validated against the pinned upstream reference.
+  Expert-only drafting audits pass on CPU and CUDA fixtures and the real Q8_0
+  model. Verification-history/self-spec acceptance is still pending.
 
 Pinned reference source: upstream llama.cpp
 `650bf14eb9a922de0f88c9523a271159cc5ae469`.
@@ -71,7 +71,28 @@ Machine-readable reports: [independent AR fixture](validation/qwen35-ar-fixture-
 [Orin CUDA AR](validation/qwen35-cuda-ar-fixture-20261017.json).
 These are not full real-model Qwen3.5 forward-pass or self-spec validation.
 
-An existing full HF Qwen3.5-35B-A3B snapshot was located on `2x-A100`; a separate
-pinned-upstream Q8_0 conversion is being prepared there for real-model validation.
-It will be recorded with its own hash and conversion manifest and must not be
-confused with the selected ggml-org download above.
+An existing full HF Qwen3.5-35B-A3B snapshot on `2x-A100` was converted separately
+with the pinned upstream converter to Q8_0. This local conversion is distinct
+from the ggml-org download above. Its SHA-256 is
+`f23b26ea23f30a491728b1e4448f22e1bcbe69805bba8618f2277f18ac3cdaea`.
+The [conversion manifest](validation/qwen35-model-conversion-20261017.json)
+records the source shard sizes/mtimes, metadata hashes and converter revision.
+
+### Real-model Gate 1 and expert-only Gate 2
+
+The real-model [AR report](validation/qwen35-real-ar-20261017.json) records three
+raw prompts, 32 generated tokens each, and candidate batch/serial prefill against
+upstream: **6/6 exact prompt/output token sequences** on the `2x-A100` CPU host.
+The actual `llama-speculative-qwen35 --ar` entry point also reproduced the first
+32-token upstream reference with default F16 KV and eight CPU threads.
+
+The [expert audit](validation/qwen35-expert-audit-20261017.json) inspects executed
+up/gate/down projection shapes. On the real model, top-k 1/2/8 retain all 30
+recurrent layers, 10 full-attention layers and 40 shared-expert paths. Routed
+projection output elements are 362496 / 724992 / 2899968 respectively. Setting
+draft top-k to 1 on a target context leaves its logits exactly unchanged and its
+routed expert count at 8. These graph-size reductions do not establish speedup.
+The same audit passes on Orin CPU and CUDA F32 fixtures (top-k 1/2).
+
+Gate 3 remains closed: the product entry point still requires `--ar` until
+snapshot/history and accepted-prefix continuation tests pass for Qwen3.5.
