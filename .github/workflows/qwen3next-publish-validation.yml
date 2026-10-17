@@ -1,0 +1,81 @@
+name: Publish Qwen3-Next validation evidence to Draft PR
+
+on:
+  push:
+    branches: [feature/qwen3next-self-spec]
+    paths: ['.github/workflows/qwen3next-publish-validation.yml', 'docs/validation/qwen3next-80b-20261017.json']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: qwen3next-pr-validation-comment
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 39019436391
+          name: next-typecheck-baseline-comparison
+          path: baseline-evidence
+      - name: Preserve the PR body and post an owned validation comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const report = JSON.parse(fs.readFileSync('baseline-evidence/comparison.json', 'utf8'));
+            if (!report.same_dependency_inputs || !report.shared_dependency_environment) {
+              throw new Error('The report does not establish a same-environment baseline');
+            }
+            const marker = '<!-- qwen3next-validation-evidence -->';
+            const before = report.base, after = report.candidate;
+            const paths = [...new Set(before.diagnostics.filter(d => d.severity === 'error').map(d => d.file))];
+            let body = `${marker}\n## Validation follow-up\n\n` +
+              `### Same-environment Python type-check baseline\n\n` +
+              `Both revisions used one Ubuntu/Python 3.11 dependency installation, ${report.pyright}, ` +
+              `and the original CI flags/configuration.\n\n` +
+              `| Revision | Errors | Warnings | Exit |\n|---|---:|---:|---:|\n` +
+              `| orin \`${before.revision.slice(0,9)}\` | ${before.summary.errorCount} | ${before.summary.warningCount} | ${before.exit_code} |\n` +
+              `| branch \`${after.revision.slice(0,9)}\` | ${after.summary.errorCount} | ${after.summary.warningCount} | ${after.exit_code} |\n\n` +
+              `New diagnostics: **${report.new_diagnostics}**; removed: **${report.removed.length}**; ` +
+              `identical normalized diagnostics: **${report.diagnostics_identical}**.\n\n` +
+              `Error locations: ${paths.map(p => '\x60' + p + '\x60').join(', ')}. ` +
+              `No unrelated type-error fixes are included. This comparison does not turn the repository-wide type-check green.\n\n` +
+              `[Comparison run, raw JSON reports and shared pip freeze](https://github.com/angerybob/S2-MoE/actions/runs/39019436391).\n\n`;
+            const realPath = 'docs/validation/qwen3next-80b-20261017.json';
+            if (fs.existsSync(realPath)) {
+              const real = JSON.parse(fs.readFileSync(realPath, 'utf8'));
+              const c = real.coverage;
+              body += `### Real 80B token equivalence\n\n` +
+                `Model: \`${real.model.name}\`; inference source revision \`${real.source_revision.slice(0,9)}\`.\n\n` +
+                `Three raw prompts; ${real.tokens_per_case} tokens each; draft depth/top-k ` +
+                `\`(1,1), (4,2), (8,4)\`; greedy decoding and SSD-backed experts.\n\n` +
+                `Result: **${real.status}**; **${c.matching}/${c.comparisons}** speculative sequences match their AR reference exactly.\n\n` +
+                `Audited rounds: zero draft acceptance **${c.zero_accept_rounds}**, partial acceptance ` +
+                `**${c.partial_accept_rounds}**, full acceptance **${c.full_accept_rounds}**.\n\n` +
+                `Per-case token IDs, accepted lengths and commit audit records: ` +
+                `[validation report](https://github.com/angerybob/S2-MoE/blob/feature/qwen3next-self-spec/${realPath}).\n\n` +
+                `This checks the tested conditions only; it is not a throughput benchmark, general lossless-decoding claim, or Qwen3.5 qualification.\n`;
+            } else {
+              body += `### Real 80B validation\n\nThe three-prompt, 32-token, three-configuration matrix is still running. No expanded real-model pass is claimed yet.\n`;
+            }
+            const pr = await github.rest.pulls.get({...context.repo, pull_number: 2});
+            if (pr.data.base.ref !== 'orin' || pr.data.head.ref !== 'feature/qwen3next-self-spec') {
+              throw new Error('Unexpected pull request branches');
+            }
+            const comments = await github.paginate(github.rest.issues.listComments, {...context.repo, issue_number: 2});
+            const previous = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            const response = previous
+              ? await github.rest.issues.updateComment({...context.repo, comment_id: previous.id, body})
+              : await github.rest.issues.createComment({...context.repo, issue_number: 2, body});
+            core.notice(`Validation evidence: ${response.data.html_url}`);
+            await core.summary.addLink('PR validation comment', response.data.html_url).write();
