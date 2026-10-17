@@ -161,6 +161,45 @@ it is not a benchmark or a claim of full-model equivalence across prompts.
 Disabling eager mmap population for Next SSD mode was necessary to preserve
 demand paging rather than prefaulting the entire large expert file.
 
+## Opt-in real-model comparison matrix
+
+```bash
+python3 tests/validate-qwen3next-real.py \
+  --binary build-next/bin/llama-speculative-next \
+  --model /path/to/qwen3-next-split-experts.gguf \
+  --ssd-moe --tokens 32 --output /path/to/new-validation-directory
+```
+
+The output directory must not already exist. This test performs twelve separate
+process runs: three raw prompts (science, code, and arithmetic), each with one AR
+reference and draft depth/top-k combinations `(1,1)`, `(4,2)`, and `(8,4)`.
+Every run uses greedy decoding, the same context/microbatch/thread settings, and
+fixed-length output. Model/binary size and modification time are checked between
+cases to reject a changing test input. The script does not download weights.
+
+`report.json` is updated after every case and distinguishes incomplete, failed,
+and passed matrices. It records exact token IDs, the first mismatch if present,
+per-round accepted lengths, and audited recurrent-state commit records. The
+parser checks commit/proposal accounting as well as token equivalence. Raw native
+logs and token files remain in separate case directories. These checks do not
+constitute a performance benchmark.
+
+## Same-environment type-check baseline
+
+The separate [baseline comparison run](https://github.com/angerybob/S2-MoE/actions/runs/39019436391)
+uses one Ubuntu/Python 3.11 dependency installation, Pyright 1.1.382, and the
+original CI flags and configuration for both revisions. In that run, `orin`
+(`48e952cfc`) and the comparison branch (`b1ba2f11e`) both report **17 errors and
+1 warning**, with identical normalized diagnostics and no additions/removals.
+The earlier repository CI reported 10 errors; these are separate runs and are
+not presented as an identical historical dependency environment.
+
+Raw JSON reports and the shared `pip-freeze.txt` are retained in the run artifact.
+This establishes no new type-check diagnostics under the controlled comparison;
+it does not make the repository-wide type-check pass. Unrelated old-script fixes
+are excluded. The result is also recorded in the
+[PR validation comment](https://github.com/angerybob/S2-MoE/pull/2#issuecomment-6232094471).
+
 ## Provenance
 
 The architecture and recurrent-history implementation were extracted from the
@@ -168,3 +207,35 @@ maintainer's existing Orin prototype, with resident routing, utility scheduling,
 benchmark orchestration, and other experiment-specific changes omitted. Existing
 llama.cpp/S²-MoE MIT license notices remain applicable. This port introduces no
 new inference dependencies and does not rebase the rest of the repository.
+
+## Extended real 80B validation (2026-10-17)
+
+The fixed-condition matrix at inference source revision `b1ba2f11e`
+completed with **9/9** speculative sequences
+matching their AR reference exactly. There were three AR runs and nine self-spec
+runs, each producing 32 tokens. The model and executable stayed unchanged during
+the matrix; subsequent commits only add validation evidence and automation/docs.
+
+| Raw prompt | Draft depth | Draft top-k | Tokens | Exact AR match | Accepted/proposed | Zero/partial/full rounds |
+|---|---:|---:|---:|---|---:|---|
+| science | 1 | 1 | 32 | yes | 10/21 | 11/0/10 |
+| science | 4 | 2 | 32 | yes | 22/37 | 2/4/4 |
+| science | 8 | 4 | 32 | yes | 24/55 | 1/5/1 |
+| code | 1 | 1 | 32 | yes | 13/19 | 6/0/13 |
+| code | 4 | 2 | 32 | yes | 24/32 | 1/2/5 |
+| code | 8 | 4 | 32 | yes | 24/44 | 2/3/2 |
+| math | 1 | 1 | 32 | yes | 12/19 | 7/0/12 |
+| math | 4 | 2 | 32 | yes | 24/28 | 1/0/6 |
+| math | 8 | 4 | 32 | yes | 28/28 | 0/0/4 |
+
+Across all speculative runs, the logs cover **31** zero-accept,
+**14** partial-accept, and **57**
+full-accept rounds. Each retained-prefix copy was audited, proposal/commit counts
+conserved, and the accepted-prefix replay count remained zero. Raw prompts,
+shared settings, exact token IDs, accepted lengths and native commit-audit records
+are in the [machine-readable report](validation/qwen3next-80b-20261017.json).
+
+This extends the earlier four-token smoke test for these three prompts and
+configurations. It remains a correctness check for the tested 80B checkpoint and
+conditions, not a performance benchmark or proof of all-input/all-backend
+equivalence. Qwen3.5-MoE remains outside this PR.
