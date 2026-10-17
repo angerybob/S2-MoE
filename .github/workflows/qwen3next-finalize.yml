@@ -53,7 +53,7 @@ jobs:
             if (run?.conclusion !== 'success') throw new Error('Final head Next CPU correctness has not passed');
             core.notice('Final-head Next correctness: '+run.html_url);
             const checks = await github.paginate(github.rest.checks.listForRef,{...context.repo,ref:context.sha,per_page:100});
-            const classified = [];
+            const classified = [], unclassified = [];
             for (const check of checks.filter(c=>c.conclusion==='failure')) {
               if (check.name === 'Lint' || check.name === 'pyright type-check') {
                 classified.push(check.name+': controlled baseline diagnostics documented');continue;
@@ -68,8 +68,11 @@ jobs:
                 classified.push(check.name+': inherited source/checkout failure');
               } else if (check.name === 'android-build' && /sdkmanager.*failed with exit code 1/.test(text) && !errors.length) {
                 classified.push(check.name+': Android SDK dependency failure before compilation');
-              } else {core.notice(text.slice(-6000));throw new Error('Unclassified failed check: '+check.name);}
+              } else if (/ios|visionos|tvos/.test(check.name) && /build-xcframework.sh: No such file/.test(text) && !fs.existsSync('baseline/build-xcframework.sh')) {
+                classified.push(check.name+': packaging script absent on baseline');
+              } else {core.notice(check.name+': '+text.slice(-6000));unclassified.push(check.name);}
             }
+            if (unclassified.length) throw new Error('Unclassified failed checks: '+unclassified.join(', '));
             const marker = '<!-- next-premerge-status -->';
             const status = `### Pre-merge review and CI status\n\n`+
               `Self-review and CI triage: [record](https://github.com/angerybob/S2-MoE/blob/${context.sha}/docs/validation/qwen3next-premerge-review-20261017.md). `+

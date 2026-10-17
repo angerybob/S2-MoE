@@ -41,6 +41,8 @@ only. Qwen3.5, graph reuse, stochastic decoding, and performance are not qualifi
 - WebGPU's full example build reports the pre-existing unconditional
   `nvtx3/nvToolsExt.h` include in `examples/speculative/speculative.cpp`.
 - Android's SDK-manager dependency step fails before compilation.
+- iOS builds the library successfully, then fails packaging because the workflow
+  calls `build-xcframework.sh`, which is absent on the base as well.
 - RISC-V reported missing standard algorithm declarations in `llama-context.cpp`;
   an explicit `<algorithm>` include is added to this touched file.
 
