@@ -1,0 +1,50 @@
+name: Qwen3-Next type-check baseline comparison
+
+on:
+  push:
+    branches: [feature/qwen3next-self-spec]
+    paths: ['.github/workflows/qwen3next-typecheck-baseline.yml', 'scripts/compare-qwen3next-typecheck.py', 'requirements/**', 'pyrightconfig.json']
+  pull_request:
+    branches: [orin]
+    paths: ['.github/workflows/qwen3next-typecheck-baseline.yml', 'scripts/compare-qwen3next-typecheck.py', '**/*.py', '**/requirements*.txt', 'pyrightconfig.json']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: candidate
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/checkout@v4
+        with:
+          path: baseline
+          ref: orin
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install original CI dependencies once for both revisions
+        working-directory: candidate
+        run: |
+          python -m pip install -r requirements/requirements-all.txt
+          npm install --prefix "$RUNNER_TEMP/next-pyright" pyright@1.1.382
+      - name: Compare original CI diagnostics without changing old scripts
+        run: |
+          python candidate/scripts/compare-qwen3next-typecheck.py \
+            --base baseline --candidate candidate \
+            --pyright "$RUNNER_TEMP/next-pyright/node_modules/.bin/pyright" \
+            --output "$RUNNER_TEMP/next-typecheck-comparison"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: next-typecheck-baseline-comparison
+          path: ${{ runner.temp }}/next-typecheck-comparison
+          if-no-files-found: warn

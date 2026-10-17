@@ -1933,6 +1933,15 @@ int main(int argc, char ** argv) {
 
     model_tgt = llama_init_tgt.model.get();
     ctx_tgt   = llama_init_tgt.context.get();
+    if (model_tgt) {
+        char architecture[64] = {};
+        llama_model_meta_val_str(model_tgt, "general.architecture", architecture, sizeof(architecture));
+        if (std::string(architecture) == "qwen3next") {
+            LOG_ERR("Qwen3-Next requires the experimental llama-speculative-next executable; "
+                    "this tree decoder does not rewind recurrent state. See docs/qwen3next-self-spec.md\n");
+            return 1;
+        }
+    }
     // =============== [新增] 初始化 Chat Template ===============
     // 自动侦测模型的模版格式 (Llama-3, ChatML, ChatGLM 等)
     auto chat_templates = common_chat_templates_init(model_tgt, params.chat_template);

@@ -37,6 +37,11 @@ The chart highlights two representative workloads from the complete evaluation: 
 
 ## Quick start
 
+For experimental **Qwen3-Next expert-only self-speculation**, use the dedicated
+`llama-speculative-next` entry point and follow the
+[Next setup, correctness checks, and limitations](docs/qwen3next-self-spec.md).
+This integration does not add Qwen3.5-MoE support.
+
 Use the `orin` branch for Jetson AGX Orin and the `4090` branch for a single RTX 4090.
 
 ```bash

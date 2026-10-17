@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "source": "https://github.com/angerybob/S2-MoE/actions/runs/39019436391",
+  "artifact": "next-typecheck-baseline-comparison",
+  "environment": "one Ubuntu/Python 3.11 dependency installation for both revisions",
+  "pyright": "1.1.382",
+  "flags": ["--level", "warning", "--warnings", "--outputjson"],
+  "base_revision": "48e952cfc48862b943f409d5374802e4a771dbb5",
+  "candidate_revision_prefix": "b1ba2f11e",
+  "base_errors": 17,
+  "candidate_errors": 17,
+  "base_warnings": 1,
+  "candidate_warnings": 1,
+  "diagnostics_identical": true,
+  "added_diagnostics": 0,
+  "removed_diagnostics": 0,
+  "repository_typecheck_passes": false,
+  "note": "The earlier repository CI reported 10 errors. This controlled run has a separately recorded shared dependency freeze; it is not a reconstruction of that historical environment."
+}

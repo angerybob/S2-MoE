@@ -474,7 +474,7 @@ void llm_graph_input_mem_hybrid::set_input(const llama_ubatch * ubatch) {
 // llm_graph_result
 //
 
-llm_graph_result::llm_graph_result(int64_t max_nodes) : max_nodes(max_nodes) {
+llm_graph_result::llm_graph_result(int64_t max_nodes, bool extra_meta_cushion) : max_nodes(max_nodes), extra_meta_cushion(extra_meta_cushion) {
     reset();
 
     const char * LLAMA_GRAPH_RESULT_DEBUG = getenv("LLAMA_GRAPH_RESULT_DEBUG");
@@ -505,7 +505,8 @@ void llm_graph_result::reset() {
     moe_weight_layers_log.clear();
     moe_weight_kinds_log.clear();
 
-    buf_compute_meta.resize(ggml_tensor_overhead()*max_nodes + ggml_graph_overhead_custom(max_nodes, false));
+    buf_compute_meta.resize(ggml_tensor_overhead()*max_nodes + ggml_graph_overhead_custom(max_nodes, false) +
+                            (extra_meta_cushion ? (max_nodes/2 + 4096u)*ggml_tensor_overhead() : 0));
 
     ggml_init_params params = {
         /*.mem_size   =*/ buf_compute_meta.size(),
