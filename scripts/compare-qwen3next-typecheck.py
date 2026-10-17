@@ -18,7 +18,7 @@ def dependencies(root):
     paths = set(root.rglob("requirements*.txt"))
     paths.update((root / "requirements").glob("*.txt"))
     paths.update(root / name for name in ("pyrightconfig.json", "pyproject.toml",
-                                        ".github/workflows/python-type-check.yml"))
+                                         ".github/workflows/python-type-check.yml"))
     return {str(path.relative_to(root)): path.read_bytes() for path in paths if path.is_file()}
 
 

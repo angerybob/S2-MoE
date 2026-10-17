@@ -1,4 +1,4 @@
-name: Inspect Next premerge CI evidence
+name: Inspect remaining Next premerge failures
 on:
   push:
     branches: [feature/qwen3next-self-spec]
@@ -9,33 +9,42 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          github-token: ${{ github.token }}
-          run-id: 39042007097
-          name: next-premerge-ci-evidence
-          path: evidence
+          path: candidate
+      - uses: actions/checkout@v4
+        with:
+          ref: orin
+          path: baseline
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Same-environment lint comparison after indentation fix
+        run: |
+          python -m pip install flake8 flake8-no-print
+          set +e
+          (cd baseline && python -m flake8) > baseline-lint.txt 2>&1
+          (cd candidate && python -m flake8) > candidate-lint.txt 2>&1
+          exit 0
       - uses: actions/github-script@v7
         with:
           script: |
             const fs = require('node:fs');
-            const read = p => fs.readFileSync('evidence/'+p,'utf8');
-            const lines = p => read(p).trim().split('\n').filter(Boolean);
-            const before = new Set(lines('baseline-lint.txt'));
-            const after = new Set(lines('candidate-lint.txt'));
+            const lines = p => fs.readFileSync(p,'utf8').trim().split('\n').filter(Boolean);
+            const before = new Set(lines('baseline-lint.txt')), after = new Set(lines('candidate-lint.txt'));
             const added = [...after].filter(x => !before.has(x));
-            const removed = [...before].filter(x => !after.has(x));
-            core.notice(JSON.stringify({baseline:before.size,candidate:after.size,added,removed}));
-            for (const name of ['lint','asan']) {
-              const p = fs.existsSync('evidence/'+name+'.log') ? name+'.log' : name+'-error.txt';
-              const all = lines(p);
-              const errors = new Set();
-              for (let i=0;i<all.length;i++) {
-                if (/error:|fatal error|Error |FAILED|ERROR|undefined reference|No rule to make|Error at|not found|E[0-9]{3}|F[0-9]{3}|T[0-9]{3}/i.test(all[i])) {
-                  for (let k=Math.max(0,i-1);k<=Math.min(all.length-1,i+1);k++) errors.add(all[k]);
-                }
-              }
-              core.notice(name + ': ' + ([...errors].join('\n') || all.join('\n')).slice(-18000));
+            core.notice(JSON.stringify({baseline:before.size,candidate:after.size,added,removed:[...before].filter(x => !after.has(x))}));
+            if (added.length) core.setFailed('New lint diagnostics');
+            const checks = await github.paginate(github.rest.checks.listForRef,{...context.repo,ref:'51c4112df',per_page:100});
+            for (const check of checks.filter(c=>c.conclusion==='failure')) {
+              try {
+                const id = Number(check.details_url?.match(/job\/(\d+)/)?.[1] || check.html_url.match(/job\/(\d+)/)?.[1]);
+                if (!id) {core.notice(check.name+': no job ID');continue;}
+                const logs = (await github.rest.actions.downloadJobLogsForWorkflowRun({...context.repo,job_id:id})).data;
+                const text = typeof logs === 'string' ? logs : Buffer.from(logs).toString('utf8');
+                const errors = text.split('\n').filter(x=>/error:|error C\d|CMake Error|invalid path|fatal error|No rule to make target|Could NOT|Exception:|exit code 128|permission denied|not supported|fatal:/i.test(x));
+                core.notice(check.name+': '+(errors.join('\n')||text.slice(-3000)).slice(0,7000));
+              } catch(e) {core.notice(check.name+': '+String(e));}
             }
