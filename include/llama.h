@@ -700,6 +700,18 @@ extern "C" {
                  llama_pos p0,
                  llama_pos p1);
 
+    // Experimental Qwen3-Next verification-prefix history. Single seq_id=0 only.
+    // Reserve before decoding; capacity is in [1, 32] and cannot be grown later.
+    // Capture exactly one contiguous verification ubatch; caller must disable
+    // CUDA graphs and graph reuse while using this experimental API.
+    // Begin/finish surround llama_decode. Commit requires 1 <= prefix <= tokens,
+    // includes the known root token, restores both recurrent states and trims KV.
+    // A new capture invalidates the previous history. Returns false on misuse.
+    LLAMA_API bool llama_memory_history_reserve(llama_memory_t mem, uint32_t capacity);
+    LLAMA_API bool llama_memory_history_begin(llama_memory_t mem, llama_seq_id seq, llama_pos first, uint32_t tokens);
+    LLAMA_API bool llama_memory_history_finish(struct llama_context * ctx);
+    LLAMA_API bool llama_memory_history_commit(struct llama_context * ctx, llama_seq_id seq, uint32_t prefix, bool audit);
+
     // Copy all tokens that belong to the specified sequence to another sequence
     // p0 < 0 : [0,  p1]
     // p1 < 0 : [p0, inf)

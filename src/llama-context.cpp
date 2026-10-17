@@ -4,6 +4,9 @@
 #include "llama-batch.h"
 #include "llama-io.h"
 #include "llama-memory.h"
+#include "llama-memory-hybrid.h"
+#include "llama-memory-recurrent.h"
+#include "llama-kv-cache.h"
 #include "llama-mmap.h"
 #include "llama-model.h"
 #include "llama-model-dflash.h"
@@ -114,6 +117,8 @@ llama_context::llama_context(
     {
         const char * LLAMA_GRAPH_REUSE_DISABLE = getenv("LLAMA_GRAPH_REUSE_DISABLE");
         graph_reuse_disable = LLAMA_GRAPH_REUSE_DISABLE ? (atoi(LLAMA_GRAPH_REUSE_DISABLE) != 0) : graph_reuse_disable;
+        // Qwen3-Next verification can add/remove recurrent history outputs.
+        graph_reuse_disable = graph_reuse_disable || model.arch == LLM_ARCH_QWEN3NEXT;
 
         if (graph_reuse_disable) {
             LLAMA_LOG_WARN("%s: graph reuse disabled\n", __func__);
@@ -243,8 +248,8 @@ llama_context::llama_context(
 
         LLAMA_LOG_DEBUG("%s: max_nodes = %zu\n", __func__, max_nodes);
 
-        gf_res_prev.reset(new llm_graph_result(max_nodes));
-        gf_res_reserve.reset(new llm_graph_result(max_nodes));
+        gf_res_prev.reset(new llm_graph_result(max_nodes, model.arch == LLM_ARCH_QWEN3NEXT));
+        gf_res_reserve.reset(new llm_graph_result(max_nodes, model.arch == LLM_ARCH_QWEN3NEXT));
 
         // TODO: move these checks to ggml_backend_sched
         // enabling pipeline parallelism in the scheduler increases memory usage, so it is only done when necessary
@@ -1416,7 +1421,7 @@ int llama_context::decode(const llama_batch & batch_inp) {
 
     // EAGLE3: Auto-update draft hidden states after successful decode
     // This automatically extracts and stores the last layer hidden states for draft model usage
-    if (is_draft_context) {
+    if (is_draft_context && model.arch != LLM_ARCH_QWEN3NEXT) {
         auto_update_draft_hidden_states();
         LLAMA_LOG_DEBUG("EAGLE3: Auto-updated draft hidden states for draft context\n");
     }
@@ -1527,6 +1532,14 @@ void llama_context::output_reorder() {
 //
 
 uint32_t llama_context::graph_max_nodes() const {
+    if (model.arch == LLM_ARCH_QWEN3NEXT) {
+        // DeltaNet is unrolled per token in this compatibility graph. A budget
+        // based only on weight count underallocates long prompt microbatches.
+        const uint64_t nodes = 128ull * model.hparams.n_layer * (cparams.n_ubatch + 1ull) +
+                               16ull * model.n_tensors() + 8192;
+        return uint32_t(std::min<uint64_t>(std::numeric_limits<uint32_t>::max(),
+                                         std::max<uint64_t>(65536, nodes)));
+    }
     return std::max<uint32_t>(1024u, 8u*model.n_tensors());
 }
 // uint32_t llama_context::graph_max_nodes(uint32_t n_tokens) const {
@@ -2976,6 +2989,31 @@ bool llama_memory_seq_rm(
     }
 
     return mem->seq_rm(seq_id, p0, p1);
+}
+
+bool llama_memory_history_reserve(llama_memory_t mem, uint32_t capacity) {
+    auto * hybrid = dynamic_cast<llama_memory_hybrid *>(mem);
+    return hybrid && hybrid->get_mem_recr()->reserve_history(capacity);
+}
+
+bool llama_memory_history_begin(llama_memory_t mem, llama_seq_id seq, llama_pos first, uint32_t tokens) {
+    auto * hybrid = dynamic_cast<llama_memory_hybrid *>(mem);
+    return hybrid && hybrid->get_mem_recr()->begin_history(seq, first, tokens);
+}
+
+bool llama_memory_history_finish(llama_context * ctx) {
+    if (!ctx) return false;
+    ctx->synchronize();
+    auto * hybrid = dynamic_cast<llama_memory_hybrid *>(ctx->get_memory());
+    return hybrid && hybrid->get_mem_recr()->finish_history();
+}
+
+bool llama_memory_history_commit(llama_context * ctx, llama_seq_id seq, uint32_t prefix, bool audit) {
+    if (!ctx) return false;
+    auto * hybrid = dynamic_cast<llama_memory_hybrid *>(ctx->get_memory());
+    if (!hybrid || !hybrid->get_mem_recr()->restore_history(seq, prefix, audit)) return false;
+    const llama_pos end = hybrid->get_mem_recr()->seq_pos_max(seq);
+    return hybrid->get_mem_attn()->seq_rm(seq, end + 1, -1);
 }
 
 void llama_memory_seq_cp(

@@ -505,7 +505,7 @@ struct llm_graph_params {
 
 class llm_graph_result {
 public:
-    llm_graph_result(int64_t max_nodes);
+    llm_graph_result(int64_t max_nodes, bool extra_meta_cushion = false);
 
     virtual ~llm_graph_result() = default;
 
@@ -604,6 +604,7 @@ public:
     ggml_cgraph * gf;
 
     int64_t max_nodes;
+    const bool extra_meta_cushion;
 
 private:
     // keep a copy of the previous graph parameters

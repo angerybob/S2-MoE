@@ -1202,9 +1202,61 @@ static void ggml_compute_forward_mul_mat_one_chunk(
     }
 }
 
+// Explicit F32 precision must not round F32 activations to the half-weight
+// dot-product type. Use a bounded row buffer, never a full expert-weight copy.
+static bool ggml_compute_forward_half_mat_f32(
+        const struct ggml_compute_params * params, struct ggml_tensor * dst) {
+    const struct ggml_tensor * a = dst->src[0];
+    const struct ggml_tensor * b = dst->src[1];
+    if (dst->op_params[0] != GGML_PREC_F32 || b->type != GGML_TYPE_F32 ||
+        (a->type != GGML_TYPE_F16 && a->type != GGML_TYPE_BF16)) {
+        return false;
+    }
+    GGML_ASSERT(a->nb[0] == ggml_type_size(a->type));
+    GGML_ASSERT(b->nb[0] == sizeof(float) && dst->type == GGML_TYPE_F32);
+    const bool indirect = dst->op == GGML_OP_MUL_MAT_ID;
+    const struct ggml_tensor * ids = indirect ? dst->src[2] : NULL;
+    float * row = malloc(a->ne[0] * sizeof(float));
+    GGML_ASSERT(row != NULL);
+    for (int64_t index = params->ith; index < ggml_nelements(dst); index += params->nth) {
+        int64_t rest = index;
+        const int64_t i0 = rest % dst->ne[0]; rest /= dst->ne[0];
+        const int64_t i1 = rest % dst->ne[1]; rest /= dst->ne[1];
+        const int64_t i2 = rest % dst->ne[2];
+        const int64_t i3 = rest / dst->ne[2];
+        const char * weights;
+        const float * input;
+        if (indirect) {
+            int32_t expert;
+            memcpy(&expert, (const char *) ids->data + i1*ids->nb[0] + i2*ids->nb[1], sizeof(expert));
+            GGML_ASSERT(expert >= 0 && expert < a->ne[2]);
+            weights = (const char *) a->data + i0*a->nb[1] + expert*a->nb[2];
+            input = (const float *) ((const char *) b->data + (i1 % b->ne[1])*b->nb[1] + i2*b->nb[2]);
+        } else {
+            const int64_t r2 = b->ne[2] / a->ne[2];
+            const int64_t r3 = b->ne[3] / a->ne[3];
+            weights = (const char *) a->data + i0*a->nb[1] + (i2/r2)*a->nb[2] + (i3/r3)*a->nb[3];
+            input = (const float *) ((const char *) b->data + i1*b->nb[1] + i2*b->nb[2] + i3*b->nb[3]);
+        }
+        if (a->type == GGML_TYPE_F16) {
+            ggml_fp16_to_fp32_row((const ggml_fp16_t *) weights, row, a->ne[0]);
+        } else {
+            ggml_bf16_to_fp32_row((const ggml_bf16_t *) weights, row, a->ne[0]);
+        }
+        float value;
+        type_traits_cpu[GGML_TYPE_F32].vec_dot(a->ne[0], &value, 0, row, 0, input, 0, 1);
+        memcpy((char *) dst->data + i0*dst->nb[0] + i1*dst->nb[1] + i2*dst->nb[2] + i3*dst->nb[3],
+               &value, sizeof(value));
+    }
+    free(row);
+    return true;
+}
+
 void ggml_compute_forward_mul_mat(
         const struct ggml_compute_params * params,
               struct ggml_tensor * dst) {
+
+    if (ggml_compute_forward_half_mat_f32(params, dst)) return;
 
     const struct ggml_tensor * src0 = dst->src[0];
     const struct ggml_tensor * src1 = dst->src[1];
@@ -1479,6 +1531,8 @@ static void * incr_ptr_aligned(void ** p, size_t size, size_t align) {
 static void ggml_compute_forward_mul_mat_id(
         const struct ggml_compute_params * params,
               struct ggml_tensor * dst) {
+
+    if (ggml_compute_forward_half_mat_f32(params, dst)) return;
 
     const struct ggml_tensor * src0 = dst->src[0];
     const struct ggml_tensor * src1 = dst->src[1];

@@ -50,6 +50,3 @@ if (BUILD_SHARED_LIBS)
     target_compile_definitions(llama PRIVATE LLAMA_BUILD)
     target_compile_definitions(llama PUBLIC  LLAMA_SHARED)
 endif()
-# ---- NVTX (CUDA Toolkit) ----
-target_include_directories(llama PRIVATE /usr/local/cuda-12.6/targets/aarch64-linux/include)
-target_link_libraries(llama PRIVATE /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnvToolsExt.so)

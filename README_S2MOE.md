@@ -1,5 +1,12 @@
 # S2-MoE notes
 
+## Experimental Qwen3-Next
+
+`llama-speculative-next` adds a limited greedy, expert-sparse self-draft path for
+Qwen3-Next with shared hybrid memory and verification-prefix recurrent history.
+See [usage, state semantics, tests, limitations, and memory costs](docs/qwen3next-self-spec.md).
+Qwen3.5-MoE and its tokenizer are not supported by this contribution.
+
 ## Build
 
 CPU-only build:

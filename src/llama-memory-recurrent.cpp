@@ -22,7 +22,7 @@ llama_memory_recurrent::llama_memory_recurrent(
                      bool   offload,
                  uint32_t   mem_size,
                  uint32_t   n_seq_max,
-    const layer_filter_cb & filter) : hparams(model.hparams), n_seq_max(n_seq_max) {
+    const layer_filter_cb & filter) : hparams(model.hparams), supports_history(model.arch == LLM_ARCH_QWEN3NEXT), n_seq_max(n_seq_max) {
     const int32_t n_layer = hparams.n_layer;
 
     head = 0;
@@ -117,7 +117,119 @@ llama_memory_recurrent::llama_memory_recurrent(
     }
 }
 
+bool llama_memory_recurrent::reserve_history(uint32_t capacity) {
+    if (!supports_history || n_seq_max != 1 || capacity == 0 || capacity > 32) return false;
+    if (capacity <= history_capacity) return true;
+    if (history_capacity) return false;
+    std::map<ggml_backend_buffer_type_t, ggml_context *> contexts;
+    std::vector<ggml_context_ptr> new_contexts;
+    std::vector<ggml_backend_buffer_ptr> new_buffers;
+    std::vector<ggml_tensor *> new_r(r_l.size(), nullptr), new_s(s_l.size(), nullptr);
+    for (size_t il = 0; il < r_l.size(); ++il) {
+        if (!r_l[il] || !s_l[il]) continue;
+        const auto buft = ggml_backend_buffer_get_type(r_l[il]->buffer);
+        auto & ctx = contexts[buft];
+        if (!ctx) {
+            ctx = ggml_init({2 * r_l.size() * ggml_tensor_overhead(), nullptr, true});
+            if (!ctx) return false;
+            new_contexts.emplace_back(ctx);
+        }
+        new_r[il] = ggml_new_tensor_2d(ctx, r_l[il]->type, hparams.n_embd_r(), capacity);
+        new_s[il] = ggml_new_tensor_2d(ctx, s_l[il]->type, hparams.n_embd_s(), capacity);
+        ggml_format_name(new_r[il], "verify_history_r_%zu", il);
+        ggml_format_name(new_s[il], "verify_history_s_%zu", il);
+    }
+    size_t bytes = 0;
+    for (const auto & item : contexts) {
+        auto * buf = ggml_backend_alloc_ctx_tensors_from_buft(item.second, item.first);
+        if (!buf) return false;
+        bytes += ggml_backend_buffer_get_size(buf);
+        new_buffers.emplace_back(buf);
+    }
+    history_ctxs = std::move(new_contexts);
+    history_bufs = std::move(new_buffers);
+    history_r_l = std::move(new_r);
+    history_s_l = std::move(new_s);
+    history_capacity = capacity;
+    LLAMA_LOG_INFO("S2MOE_HISTORY_ALLOC_JSON {\"capacity\":%u,\"bytes\":%zu}\n", capacity, bytes);
+    return true;
+}
+
+bool llama_memory_recurrent::begin_history(llama_seq_id seq, llama_pos first_pos, uint32_t tokens) {
+    history_valid = false;
+    history_capturing = false;
+    if (seq != 0 || first_pos < 0 || tokens == 0 || tokens > history_capacity ||
+        first_pos != seq_pos_max(seq) + 1) return false;
+    history_seq = seq;
+    history_first_pos = first_pos;
+    history_tokens = tokens;
+    history_capturing = true;
+    return true;
+}
+
+bool llama_memory_recurrent::finish_history() {
+    if (!history_capturing || seq_pos_max(history_seq) != history_first_pos + int32_t(history_tokens) - 1) return false;
+    history_capturing = false;
+    history_valid = true;
+    return true;
+}
+
+ggml_tensor * llama_memory_recurrent::history_r(int il) const {
+    return history_capturing && history_tokens > 1 ? history_r_l.at(il) : nullptr;
+}
+
+ggml_tensor * llama_memory_recurrent::history_s(int il) const {
+    return history_capturing && history_tokens > 1 ? history_s_l.at(il) : nullptr;
+}
+
+bool llama_memory_recurrent::restore_history(llama_seq_id seq, uint32_t prefix_tokens, bool audit) {
+    if (!history_valid || seq != history_seq || prefix_tokens == 0 || prefix_tokens > history_tokens ||
+        seq_pos_max(seq) != history_first_pos + int32_t(history_tokens) - 1) return false;
+    const int32_t tail = cells.at(seq).tail;
+    if (tail < 0 || cells[tail].seq_id.size() != 1 || !cells[tail].has_seq_id(seq)) return false;
+    // Single-token verification writes the live recurrent state directly;
+    // history_r/history_s deliberately expose no capture buffer for this case.
+    // Copying history row zero here would restore stale/uninitialized data.
+    if (history_tokens == 1) {
+        history_valid = false;
+        LLAMA_LOG_INFO("S2MOE_HISTORY_RESTORE_JSON {\"prefix_tokens\":1,\"verified_tokens\":1,\"bytes\":0,\"copy_audited\":false,\"live_state_kept\":true}\n");
+        return true;
+    }
+    ggml_context_ptr views(ggml_init({4 * r_l.size() * ggml_tensor_overhead(), nullptr, true}));
+    if (!views) return false;
+    size_t copied = 0;
+    for (size_t il = 0; il < r_l.size(); ++il) {
+        if (!r_l[il]) continue;
+        for (int kind = 0; kind < 2; ++kind) {
+            auto * live = kind ? s_l[il] : r_l[il];
+            auto * hist = kind ? history_s_l[il] : history_r_l[il];
+            const size_t row_bytes = hist->nb[1];
+            auto * src = ggml_view_1d(views.get(), hist, hist->ne[0], (prefix_tokens - 1) * row_bytes);
+            auto * dst = ggml_view_1d(views.get(), live, hist->ne[0], tail * row_bytes);
+            if (ggml_backend_view_init(src) != GGML_STATUS_SUCCESS ||
+                ggml_backend_view_init(dst) != GGML_STATUS_SUCCESS) return false;
+            ggml_backend_tensor_copy(src, dst);
+            if (audit) {
+                std::vector<uint8_t> expected(row_bytes), actual(row_bytes);
+                ggml_backend_tensor_get(src, expected.data(), 0, row_bytes);
+                ggml_backend_tensor_get(dst, actual.data(), 0, row_bytes);
+                if (expected != actual) return false;
+            }
+            copied += row_bytes;
+        }
+    }
+    cells[tail].pos = history_first_pos + int32_t(prefix_tokens) - 1;
+    cells[tail].src = tail;
+    cells[tail].src0 = tail;
+    history_valid = false;
+    LLAMA_LOG_INFO("S2MOE_HISTORY_RESTORE_JSON {\"prefix_tokens\":%u,\"verified_tokens\":%u,\"bytes\":%zu,\"copy_audited\":%s}\n",
+                   prefix_tokens, history_tokens, copied, audit ? "true" : "false");
+    return true;
+}
+
 void llama_memory_recurrent::clear(bool data) {
+    history_valid = false;
+    history_capturing = false;
     for (int32_t i = 0; i < (int32_t) size; ++i) {
         cells[i].pos = -1;
         cells[i].seq_id.clear();
@@ -367,6 +479,9 @@ std::map<ggml_backend_buffer_type_t, size_t> llama_memory_recurrent::memory_brea
     for (const ggml_backend_buffer_ptr & buf_ptr : bufs) {
         ret[ggml_backend_buffer_get_type(buf_ptr.get())] += ggml_backend_buffer_get_size(buf_ptr.get());
     }
+    for (const auto & buf_ptr : history_bufs) {
+        ret[ggml_backend_buffer_get_type(buf_ptr.get())] += ggml_backend_buffer_get_size(buf_ptr.get());
+    }
     return ret;
 }
 
@@ -419,6 +534,19 @@ llama_memory_context_ptr llama_memory_recurrent::init_update(llama_context * lct
 }
 
 bool llama_memory_recurrent::prepare(const std::vector<llama_ubatch> & ubatches) {
+    if (history_capturing) {
+        // History rows are local to one verification graph. Reject splitting
+        // instead of overwriting row zero in each subsequent microbatch.
+        if (ubatches.size() != 1 || ubatches[0].n_seqs != 1 ||
+            ubatches[0].n_tokens != history_tokens || ubatches[0].pos[0] != history_first_pos) {
+            return false;
+        }
+        const auto & ubatch = ubatches[0];
+        for (uint32_t i = 0; i < ubatch.n_tokens; ++i) {
+            if (ubatch.n_seq_id[i] != 1 || ubatch.seq_id[i][0] != history_seq ||
+                ubatch.pos[i] != history_first_pos + int32_t(i)) return false;
+        }
+    }
     // simply remember the full state because it is very small for this type of cache
     // TODO: optimize
     auto org_cells = cells;
@@ -661,6 +789,9 @@ bool llama_memory_recurrent::get_can_shift() const {
 size_t llama_memory_recurrent::total_size() const {
     size_t size = 0;
     for (const auto & buf : bufs) {
+        size += ggml_backend_buffer_get_size(buf.get());
+    }
+    for (const auto & buf : history_bufs) {
         size += ggml_backend_buffer_get_size(buf.get());
     }
 
@@ -1143,6 +1274,9 @@ int32_t llama_memory_recurrent_context::get_rs_z() const {
 uint32_t llama_memory_recurrent_context::get_size() const {
     return mem->size;
 }
+
+ggml_tensor * llama_memory_recurrent_context::get_history_r_l(int32_t il) const { return mem->history_r(il); }
+ggml_tensor * llama_memory_recurrent_context::get_history_s_l(int32_t il) const { return mem->history_s(il); }
 
 ggml_tensor * llama_memory_recurrent_context::get_r_l(int32_t il) const {
     return mem->r_l[il];

@@ -103,9 +103,29 @@ public:
     std::vector<ggml_tensor *> r_l;
     std::vector<ggml_tensor *> s_l;
 
+    // Per-token recurrent states captured by one target verification batch.
+    bool reserve_history(uint32_t capacity);
+    bool begin_history(llama_seq_id seq, llama_pos first_pos, uint32_t tokens);
+    bool finish_history();
+    bool restore_history(llama_seq_id seq, uint32_t prefix_tokens, bool audit);
+    ggml_tensor * history_r(int il) const;
+    ggml_tensor * history_s(int il) const;
+    uint32_t history_capacity = 0;
+    bool history_capturing = false;
+
+private:
+    std::vector<ggml_tensor *> history_r_l, history_s_l;
+    std::vector<ggml_context_ptr> history_ctxs;
+    std::vector<ggml_backend_buffer_ptr> history_bufs;
+    llama_seq_id history_seq = -1;
+    llama_pos history_first_pos = -1;
+    uint32_t history_tokens = 0;
+    bool history_valid = false;
+
 private:
     //const llama_model & model;
     const llama_hparams & hparams;
+    const bool supports_history;
 
     const uint32_t n_seq_max = 1;
 
@@ -161,6 +181,8 @@ public:
 
     ggml_tensor * get_r_l(int32_t il) const;
     ggml_tensor * get_s_l(int32_t il) const;
+    ggml_tensor * get_history_r_l(int32_t il) const;
+    ggml_tensor * get_history_s_l(int32_t il) const;
 
     int32_t s_copy(int i) const;
 
