@@ -7,7 +7,6 @@ on:
     paths: ['src/**', 'include/**', 'ggml/**', 'examples/speculative-next/**', 'examples/speculative-qwen35/**', 'tests/**', '.github/workflows/qwen35.yml']
 permissions:
   contents: read
-  actions: read
 jobs:
   independent-ar:
     runs-on: ubuntu-latest
@@ -24,7 +23,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install numpy
+      - run: python -m pip install numpy pyyaml
       - name: Build candidate and an independent upstream CPU reference
         run: |
           cmake -S candidate -B candidate/build-qwen35 -DGGML_CUDA=OFF -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_SERVER=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
@@ -43,14 +42,3 @@ jobs:
           name: qwen35-independent-ar
           path: candidate/build-qwen35/ar-reference-results
           if-no-files-found: warn
-
-  inspect-initial-ci:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            const raw = (await github.rest.actions.downloadJobLogsForWorkflowRun({...context.repo,job_id:117432149871})).data;
-            const text = typeof raw === 'string' ? raw : Buffer.from(raw).toString('utf8');
-            const selected = text.split('\n').filter(x=>/error|fatal|undefined reference|No such file|failed|not found/i.test(x));
-            core.notice((selected.join('\n') || text.slice(-8000)).slice(-16000));

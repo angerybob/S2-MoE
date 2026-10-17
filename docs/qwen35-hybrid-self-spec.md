@@ -55,3 +55,23 @@ To build the candidate driver, build target `test-qwen35-ar`. Compile the same
 CPU libraries, then run `tests/validate-qwen35-ar.py --help` for the comparison
 harness. Both drivers use greedy sampling, ignore EOS, disable attention flash
 kernels and use CPU-only model placement. The candidate also disables graph reuse.
+
+### Recorded Gate 1 checks
+
+| Check | Result | Scope |
+|---|---|---|
+| Independent upstream vs candidate, 3 prompts x 32 tokens, batch/serial prefill | 6/6 exact token sequences | F32 random-weight fixture, Orin CPU |
+| Same independent comparison on x86 CPU | 6/6 | 2x-A100 host, CPU-only inference |
+| CPU vs CUDA AR entry point, 3 prompts x 32 tokens | 3/3 exact token sequences | F32 random-weight fixture, Orin |
+| Original real-model vocabulary vs pinned upstream | 12/12 exact token sequences | Vocabulary-only metadata; no weight inference |
+| Existing Next regression | 9/9 | F32/F16/BF16 fixtures, state/history, greedy loop |
+
+Machine-readable reports: [independent AR fixture](validation/qwen35-ar-fixture-20261017.json),
+[real tokenizer](validation/qwen35-tokenizer-20261017.json),
+[Orin CUDA AR](validation/qwen35-cuda-ar-fixture-20261017.json).
+These are not full real-model Qwen3.5 forward-pass or self-spec validation.
+
+An existing full HF Qwen3.5-35B-A3B snapshot was located on `2x-A100`; a separate
+pinned-upstream Q8_0 conversion is being prepared there for real-model validation.
+It will be recorded with its own hash and conversion manifest and must not be
+confused with the selected ggml-org download above.
