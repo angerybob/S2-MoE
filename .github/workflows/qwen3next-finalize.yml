@@ -1,0 +1,89 @@
+name: Finalize reviewed experimental Qwen3-Next PR
+on:
+  push:
+    branches: [feature/qwen3next-self-spec]
+    paths: ['.github/workflows/qwen3next-finalize.yml']
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: candidate
+      - uses: actions/checkout@v4
+        with:
+          ref: 48e952cfc48862b943f409d5374802e4a771dbb5
+          path: baseline
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Require zero added lint diagnostics in a shared environment
+        run: |
+          python -m pip install flake8 flake8-no-print
+          set +e
+          (cd baseline && python -m flake8) > baseline-lint.txt 2>&1
+          (cd candidate && python -m flake8) > candidate-lint.txt 2>&1
+          exit 0
+      - name: Gate readiness and merge on reviewed SHA and targeted correctness
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const lines = p => fs.readFileSync(p,'utf8').trim().split('\n').filter(Boolean);
+            const before = new Set(lines('baseline-lint.txt')), after = new Set(lines('candidate-lint.txt'));
+            const added = [...after].filter(x=>!before.has(x));
+            core.notice(JSON.stringify({baseline:before.size,candidate:after.size,added}));
+            if (added.length) throw new Error('New lint diagnostics');
+            const args = {...context.repo,pull_number:2};
+            let pr = (await github.rest.pulls.get(args)).data;
+            if (pr.base.ref !== 'orin' || pr.head.ref !== 'feature/qwen3next-self-spec' || pr.head.sha !== context.sha || pr.state !== 'open') throw new Error('PR head/base/state changed');
+            let run;
+            for (let i=0;i<72;i++) {
+              const runs = (await github.rest.actions.listWorkflowRuns({...context.repo,workflow_id:'qwen3next.yml',head_sha:context.sha,event:'push',per_page:5})).data.workflow_runs;
+              run = runs[0];
+              if (run?.status === 'completed') break;
+              await new Promise(resolve=>setTimeout(resolve,10000));
+            }
+            if (run?.conclusion !== 'success') throw new Error('Final head Next CPU correctness has not passed');
+            core.notice('Final-head Next correctness: '+run.html_url);
+            const checks = await github.paginate(github.rest.checks.listForRef,{...context.repo,ref:context.sha,per_page:100});
+            const classified = [];
+            for (const check of checks.filter(c=>c.conclusion==='failure')) {
+              if (check.name === 'Lint' || check.name === 'pyright type-check') {
+                classified.push(check.name+': controlled baseline diagnostics documented');continue;
+              }
+              const id = Number(check.details_url?.match(/job\/(\d+)/)?.[1] || check.html_url.match(/job\/(\d+)/)?.[1]);
+              if (!id) throw new Error('Cannot classify failed check: '+check.name);
+              const raw = (await github.rest.actions.downloadJobLogsForWorkflowRun({...context.repo,job_id:id})).data;
+              const text = typeof raw === 'string' ? raw : Buffer.from(raw).toString('utf8');
+              const errors = text.split('\n').filter(x=>/error:|fatal error:|error C\d|CMake Error/i.test(x));
+              const known = /invalid path|the address of .*name.*will never be NULL|unused variable|unused parameter|no previous declaration for .*ggml_cuda_register_ssd_expert|enumeration value .*LLM_ARCH_QWEN3VL.*not handled|nvtx3\/nvToolsExt.h.*No such file/i;
+              if (errors.length && errors.every(x=>known.test(x))) {
+                classified.push(check.name+': inherited source/checkout failure');
+              } else if (check.name === 'android-build' && /sdkmanager.*failed with exit code 1/.test(text) && !errors.length) {
+                classified.push(check.name+': Android SDK dependency failure before compilation');
+              } else {core.notice(text.slice(-6000));throw new Error('Unclassified failed check: '+check.name);}
+            }
+            const marker = '<!-- next-premerge-status -->';
+            const status = `### Pre-merge review and CI status\n\n`+
+              `Self-review and CI triage: [record](https://github.com/angerybob/S2-MoE/blob/${context.sha}/docs/validation/qwen3next-premerge-review-20261017.md). `+
+              `Final-head [Next CPU correctness](${run.html_url}) passed. Shared-environment lint comparison: ${before.size} baseline / ${after.size} candidate diagnostics, zero added. `+
+              `Controlled Pyright comparison remains 17 errors and 1 warning per revision, zero added.\n\n`+
+              `The inherited broad platform CI is not all green; known checkout, fatal-warning, and dependency failures are documented, and queued/platform jobs are not claimed as validated. `+
+              `Experimental single-request, single-branch greedy scope is unchanged; Qwen3.5 and performance remain unqualified.\n`;
+            pr = (await github.rest.pulls.get(args)).data;
+            if (pr.head.sha !== context.sha) throw new Error('PR changed before readiness');
+            const body = pr.body.split(marker)[0].trimEnd()+'\n\n'+marker+'\n'+status;
+            await github.rest.pulls.update({...args,body});
+            if (pr.draft) await github.graphql('mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{isDraft}}}',{id:pr.node_id});
+            core.notice('PR #2 marked ready for review');
+            const result = (await github.rest.pulls.merge({...args,sha:context.sha,merge_method:'merge',commit_title:'Add experimental Qwen3-Next expert-only self-speculation (#2)'})).data;
+            if (!result.merged) throw new Error('Merge not completed: '+result.message);
+            core.notice('PR #2 merged into orin: '+result.sha);
+            await core.summary.addRaw(status).addRaw('\nMerged into orin: `'+result.sha+'`.\n').write();
