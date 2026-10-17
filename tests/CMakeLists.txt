@@ -1,5 +1,32 @@
 llama_add_compile_flags()
 
+# Experimental Qwen3-Next tests use deterministic random weights, not downloads.
+if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
+add_executable(test-qwen3next-state test-qwen3next-state.cpp)
+target_link_libraries(test-qwen3next-state PRIVATE llama)
+target_include_directories(test-qwen3next-state PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_features(test-qwen3next-state PRIVATE cxx_std_17)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if (Python3_Interpreter_FOUND AND LLAMA_BUILD_EXAMPLES)
+    execute_process(COMMAND ${Python3_EXECUTABLE} -c "import numpy"
+                    RESULT_VARIABLE NEXT_NUMPY_STATUS OUTPUT_QUIET ERROR_QUIET)
+    if (NEXT_NUMPY_STATUS EQUAL 0)
+        foreach(NEXT_TYPE f32 f16 bf16)
+            set(NEXT_FIXTURE ${CMAKE_CURRENT_BINARY_DIR}/qwen3next-tiny-${NEXT_TYPE}.gguf)
+            add_test(NAME qwen3next-fixture-${NEXT_TYPE} COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/make-qwen3next-fixture.py ${NEXT_FIXTURE} ${NEXT_TYPE})
+            set_tests_properties(qwen3next-fixture-${NEXT_TYPE} PROPERTIES FIXTURES_SETUP qwen3next-${NEXT_TYPE})
+            add_test(NAME qwen3next-state-${NEXT_TYPE} COMMAND test-qwen3next-state ${NEXT_FIXTURE} 0)
+            add_test(NAME qwen3next-equivalence-${NEXT_TYPE} COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/test-qwen3next-equivalence.py
+                     $<TARGET_FILE:llama-speculative-next> ${NEXT_FIXTURE} 0)
+            set_tests_properties(qwen3next-state-${NEXT_TYPE} qwen3next-equivalence-${NEXT_TYPE}
+                                 PROPERTIES FIXTURES_REQUIRED qwen3next-${NEXT_TYPE})
+        endforeach()
+    endif()
+endif()
+endif()
+
 function(llama_build source)
     if (DEFINED LLAMA_TEST_NAME)
         set(TEST_TARGET ${LLAMA_TEST_NAME})
