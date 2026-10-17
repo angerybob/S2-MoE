@@ -1,0 +1,56 @@
+name: Publish Next progress and inspect CI failures
+on:
+  push:
+    branches: [feature/qwen3next-self-spec]
+    paths: ['.github/workflows/qwen3next-review-progress.yml']
+permissions:
+  contents: read
+  issues: write
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: candidate
+      - uses: actions/checkout@v4
+        with:
+          ref: 48e952cfc48862b943f409d5374802e4a771dbb5
+          path: baseline
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Publish authorized Issue 1 update and collect existing CI logs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const marker = '<!-- qwen3next-progress-pr2-20261017 -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {...context.repo, issue_number: 1});
+            const existing = comments.find(c => c.body?.includes(marker));
+            const body = fs.readFileSync('candidate/.github/qwen3next-issue-progress.md','utf8');
+            const comment = existing || (await github.rest.issues.createComment({...context.repo, issue_number: 1, body})).data;
+            core.notice('Issue progress: ' + comment.html_url);
+            await core.summary.addLink('Issue progress',comment.html_url).write();
+            fs.mkdirSync('ci-evidence',{recursive:true});
+            for (const [name,id] of [['lint',117422497008],['asan',117422810952]]) {
+              try {
+                const logs = await github.rest.actions.downloadJobLogsForWorkflowRun({...context.repo,job_id:id});
+                fs.writeFileSync('ci-evidence/'+name+'.log',typeof logs.data === 'string' ? logs.data : Buffer.from(logs.data));
+              } catch(e) {fs.writeFileSync('ci-evidence/'+name+'-error.txt',String(e));}
+            }
+      - name: Compare baseline and candidate lint in one dependency environment
+        run: |
+          python -m pip install flake8 flake8-no-print
+          python -m pip freeze > ci-evidence/pip-freeze.txt
+          set +e
+          (cd baseline && python -m flake8) > ci-evidence/baseline-lint.txt 2>&1
+          (cd candidate && python -m flake8) > ci-evidence/candidate-lint.txt 2>&1
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: next-premerge-ci-evidence
+          path: ci-evidence
