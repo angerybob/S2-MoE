@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "gguf-py"))
-import gguf
+import gguf  # noqa: E402
 
 
 def main():

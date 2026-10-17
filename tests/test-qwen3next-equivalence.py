@@ -28,10 +28,10 @@ with tempfile.TemporaryDirectory() as directory:
                          f"d{depth}-k{experts}.json")
             if actual != reference:
                 raise AssertionError(f"greedy token mismatch: depth={depth}, experts={experts}")
-            print(f"PASS greedy AR equality depth={depth}, experts={experts}, tokens={len(actual)}")
+            sys.stdout.write(f"PASS greedy AR equality depth={depth}, experts={experts}, tokens={len(actual)}\n")
     for args in (["--draft-max", "32"], ["--draft-max", "8", "-ub", "4"],
                  ["--draft-skip-attn", "0"], ["-np", "2"], ["--temp", "0.8"], ["--prune", "1"]):
         result = subprocess.run([exe, "-m", model, *args], capture_output=True)
         if result.returncode == 0:
             raise AssertionError(f"unsupported configuration accepted: {args}")
-    print("PASS unsupported CLI configurations rejected")
+    sys.stdout.write("PASS unsupported CLI configurations rejected\n")
