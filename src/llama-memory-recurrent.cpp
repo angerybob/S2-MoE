@@ -22,7 +22,7 @@ llama_memory_recurrent::llama_memory_recurrent(
                      bool   offload,
                  uint32_t   mem_size,
                  uint32_t   n_seq_max,
-    const layer_filter_cb & filter) : hparams(model.hparams), supports_history(model.arch == LLM_ARCH_QWEN3NEXT), n_seq_max(n_seq_max) {
+    const layer_filter_cb & filter) : hparams(model.hparams), supports_history(llm_arch_is_qwen_delta_net(model.arch)), n_seq_max(n_seq_max) {
     const int32_t n_layer = hparams.n_layer;
 
     head = 0;

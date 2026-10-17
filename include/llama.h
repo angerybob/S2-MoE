@@ -700,7 +700,7 @@ extern "C" {
                  llama_pos p0,
                  llama_pos p1);
 
-    // Experimental Qwen3-Next verification-prefix history. Single seq_id=0 only.
+    // Experimental Qwen3-Next/Qwen3.5-MoE prefix history. Single seq_id=0 only.
     // Reserve before decoding; capacity is in [1, 32] and cannot be grown later.
     // Capture exactly one contiguous verification ubatch; caller must disable
     // CUDA graphs and graph reuse while using this experimental API.

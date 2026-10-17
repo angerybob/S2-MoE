@@ -16,17 +16,21 @@ struct options {
 static void usage(const char * exe) {
     std::fprintf(stderr,
 #ifdef LLAMA_EXPERIMENTAL_QWEN35
-        "Experimental Qwen3.5-MoE text-only AR; currently requires --ar\n"
+        "Experimental greedy Qwen3.5-MoE expert-only self-speculation\n"
 #else
         "Experimental greedy Qwen3-Next expert-only self-speculation\n"
 #endif
         "Usage: %s -m model.gguf [-p prompt] [-n 32] [-ngl 99] [-c 512] [-ub 32]\n"
+#ifdef LLAMA_EXPERIMENTAL_QWEN35
+        "       [--draft-max 8] [--draft-expert-topk 2]\n"
+#else
         "       [--draft-max 8] [--draft-expert-topk 2] [--ssd-moe] [--hot-experts file]\n"
+#endif
         "       [--audit-state-copies] [--ar] [--tokens-file file] [--ignore-eos] [-t 8]\n"
         "One request/branch, shared hybrid memory, raw prompt, greedy sampling only.\n"
         "All recurrent/full-attention layers and shared experts remain active.\n"
 #ifdef LLAMA_EXPERIMENTAL_QWEN35
-        "CUDA graphs and graph reuse are disabled. Vision/MTP are unsupported.\n", exe);
+        "CUDA graphs and graph reuse are disabled. Vision/MTP and SSD loading are unsupported.\n", exe);
 #else
         "CUDA graphs and graph reuse are disabled automatically. Qwen3.5 is unsupported.\n", exe);
 #endif
@@ -77,7 +81,7 @@ static options parse(int argc, char ** argv) {
 
 static int run(const options & o) {
 #ifdef LLAMA_EXPERIMENTAL_QWEN35
-    next_spec::require(o.ar, "Qwen3.5 is currently AR-only; draft and history gates have not passed");
+    next_spec::require(!o.ssd && o.hot.empty(), "Qwen3.5 SSD expert loading is not yet qualified");
 #endif
     next_spec::disable_graphs();
     llama_backend_init();

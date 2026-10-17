@@ -8,7 +8,8 @@ Acceptance is staged:
 1. Register `qwen35moe`, implement the distinct `qwen35` pre-tokenizer, load the
    separate alpha/beta projections and tiled GDN key heads, and establish a
    reproducible text-only autoregressive reference. The new
-   `llama-speculative-qwen35` entry point currently **requires `--ar`**.
+   `llama-speculative-qwen35` entry point provides `--ar` as its ordinary
+   greedy reference mode.
 2. Enable expert-only drafting after AR validation. Preserve every recurrent,
    full-attention and shared-expert path; audit routed-expert counts and ensure
    the target keeps its original expert count.
@@ -41,7 +42,8 @@ Validation reports will identify the exact reference revision and model hash.
 - Existing Next fixture/state/greedy tests passed 9/9 after graph integration.
 - Real-model Q8_0 CPU AR is now validated against the pinned upstream reference.
   Expert-only drafting audits pass on CPU and CUDA fixtures and the real Q8_0
-  model. Verification-history/self-spec acceptance is still pending.
+  model. Verification-history and self-spec fixture checks now pass; the
+  extended real-model self-spec matrix is pending.
 
 Pinned reference source: upstream llama.cpp
 `650bf14eb9a922de0f88c9523a271159cc5ae469`.
@@ -94,5 +96,38 @@ draft top-k to 1 on a target context leaves its logits exactly unchanged and its
 routed expert count at 8. These graph-size reductions do not establish speedup.
 The same audit passes on Orin CPU and CUDA F32 fixtures (top-k 1/2).
 
-Gate 3 remains closed: the product entry point still requires `--ar` until
-snapshot/history and accepted-prefix continuation tests pass for Qwen3.5.
+### Gate 3: hybrid memory integration
+
+The experimental entry point now supports expert-only self-speculation as well as
+`--ar`. Both contexts share hybrid memory; drafting is undone using a recurrent
+snapshot, and verification history commits the target-computed accepted-prefix
+state directly, including root-only acceptance and correction continuation.
+
+- Orin CPU: **19/19** combined Next/Qwen3.5 tests passed. The 10 Qwen3.5 tests
+  include fixture generation, state/history and end-to-end greedy equality across
+  F32/F16/BF16 weights, plus the expert-only audit.
+- Independent x86 CPU build: **19/19** combined tests passed on `2x-A100`.
+- Orin explicit CUDA: **6/6** Qwen3.5 state/history and greedy-loop checks passed
+  across F32/F16/BF16 weights. State/logit tests use F32 KV; executable tests use
+  the default F16 KV.
+- Prefix tests cover every accepted prefix for verification lengths 1, 2, 4, 9
+  and 32, subsequent correction tokens, 64-token prefill, capacity/lifecycle
+  misuse, multiple sequences and split verification batches.
+
+The real Q8_0 self-spec matrix is still pending at this commit; no real-model
+self-spec pass is claimed yet. Qwen3.5 SSD/hot-expert loading is explicitly
+rejected by this entry point until separately qualified. Quantized formats other
+than the recorded Q8_0 model, fused recurrent projections, partial GPU offload,
+full-model CUDA inference, MTP, vision, stochastic sampling and multi-request/tree
+speculation remain unqualified.
+
+Example (CPU, one greedy chain):
+
+```sh
+build/bin/llama-speculative-qwen35 -m model.gguf -ngl 0 -p "Explain why the sky looks blue." -n 32 --draft-max 8 --draft-expert-topk 2 --audit-state-copies
+# Add --ar to obtain the same entry point's ordinary greedy reference.
+```
+
+Use `tests/validate-qwen3next-real.py` with the Qwen3.5 executable/model and
+`--gpu-layers 0` for the opt-in real-model matrix. The harness is shared with Next;
+it records actual model/binary identities and the verification commit audits.

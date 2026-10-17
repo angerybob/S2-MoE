@@ -35,6 +35,25 @@ if (Python3_Interpreter_FOUND AND LLAMA_BUILD_EXAMPLES)
 endif()
 endif()
 
+# Reuse the same prefix-state and executable tests for Qwen3.5, separately.
+if (TARGET test-qwen3next-state AND Python3_Interpreter_FOUND AND LLAMA_BUILD_EXAMPLES AND NEXT_NUMPY_STATUS EQUAL 0)
+    foreach(QWEN35_TYPE f32 f16 bf16)
+        set(QWEN35_FIXTURE ${CMAKE_CURRENT_BINARY_DIR}/qwen35-tiny-${QWEN35_TYPE}.gguf)
+        add_test(NAME qwen35-fixture-${QWEN35_TYPE} COMMAND ${Python3_EXECUTABLE}
+                 ${CMAKE_CURRENT_SOURCE_DIR}/make-qwen3next-fixture.py ${QWEN35_FIXTURE} ${QWEN35_TYPE} qwen35moe)
+        set_tests_properties(qwen35-fixture-${QWEN35_TYPE} PROPERTIES FIXTURES_SETUP qwen35-${QWEN35_TYPE})
+        add_test(NAME qwen35-state-${QWEN35_TYPE} COMMAND test-qwen3next-state ${QWEN35_FIXTURE} 0)
+        add_test(NAME qwen35-equivalence-${QWEN35_TYPE} COMMAND ${Python3_EXECUTABLE}
+                 ${CMAKE_CURRENT_SOURCE_DIR}/test-qwen3next-equivalence.py
+                 $<TARGET_FILE:llama-speculative-qwen35> ${QWEN35_FIXTURE} 0)
+        set_tests_properties(qwen35-state-${QWEN35_TYPE} qwen35-equivalence-${QWEN35_TYPE}
+                             PROPERTIES FIXTURES_REQUIRED qwen35-${QWEN35_TYPE})
+    endforeach()
+    add_test(NAME qwen35-expert-draft COMMAND test-qwen35-expert-draft
+             ${CMAKE_CURRENT_BINARY_DIR}/qwen35-tiny-f32.gguf 0)
+    set_tests_properties(qwen35-expert-draft PROPERTIES FIXTURES_REQUIRED qwen35-f32)
+endif()
+
 function(llama_build source)
     if (DEFINED LLAMA_TEST_NAME)
         set(TEST_TARGET ${LLAMA_TEST_NAME})
