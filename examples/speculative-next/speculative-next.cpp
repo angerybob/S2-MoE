@@ -1,16 +1,33 @@
 #include "next-state.h"
 #include "ggml-backend.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 
 struct options {
-    std::string model, prompt = "The capital of France is", hot, tokens_file;
+    std::string model, prompt = "The capital of France is", hot, tokens_file, timings_file;
     int predict = 32, draft = 8, experts = 2, gpu_layers = 99, context = 512, ubatch = 32, threads = 8;
-    bool ssd = false, ar = false, audit = false, ignore_eos = false;
+    bool ssd = false, ar = false, audit = false, ignore_eos = false, quiet = false;
+};
+
+// Opt-in wall-clock profiling. Synchronization at phase boundaries includes
+// backend completion; verification includes writing recurrent-state history.
+struct phase_timer {
+    using clock = std::chrono::steady_clock;
+    bool enabled;
+    double & elapsed;
+    clock::time_point start;
+    phase_timer(bool enabled, double & elapsed) : enabled(enabled), elapsed(elapsed) {
+        if (enabled) start = clock::now();
+    }
+    ~phase_timer() {
+        if (enabled) elapsed += std::chrono::duration<double, std::milli>(clock::now() - start).count();
+    }
 };
 
 static void usage(const char * exe) {
@@ -27,6 +44,7 @@ static void usage(const char * exe) {
         "       [--draft-max 8] [--draft-expert-topk 2] [--ssd-moe] [--hot-experts file]\n"
 #endif
         "       [--audit-state-copies] [--ar] [--tokens-file file] [--ignore-eos] [-t 8]\n"
+        "       [--timings-file file] [--quiet]\n"
         "One request/branch, shared hybrid memory, raw prompt, greedy sampling only.\n"
         "All recurrent/full-attention layers and shared experts remain active.\n"
 #ifdef LLAMA_EXPERIMENTAL_QWEN35
@@ -62,6 +80,8 @@ static options parse(int argc, char ** argv) {
         else if (arg == "--draft-expert-topk") o.experts = integer();
         else if (arg == "--hot-experts") o.hot = value();
         else if (arg == "--tokens-file") o.tokens_file = value();
+        else if (arg == "--timings-file") o.timings_file = value();
+        else if (arg == "--quiet") o.quiet = true;
         else if (arg == "--ssd-moe") o.ssd = true;
         else if (arg == "--ar") o.ar = true;
         else if (arg == "--audit-state-copies") o.audit = true;
@@ -80,6 +100,10 @@ static options parse(int argc, char ** argv) {
 }
 
 static int run(const options & o) {
+    const bool profile = !o.timings_file.empty();
+    const auto setup_start = phase_timer::clock::now();
+    double prefill_ms = 0, draft_ms = 0, verify_ms = 0, snapshot_ms = 0;
+    double restore_ms = 0, commit_ms = 0, ar_decode_ms = 0, sampling_ms = 0;
 #ifdef LLAMA_EXPERIMENTAL_QWEN35
     next_spec::require(!o.ssd && o.hot.empty(), "Qwen3.5 SSD expert loading is not yet qualified");
 #endif
@@ -137,13 +161,19 @@ static int run(const options & o) {
     next_spec::require(count > 0, "prompt must tokenize to at least one token");
     prompt.resize(count);
     next_spec::require(int64_t(count) + o.predict <= o.context, "prompt + output exceeds context capacity");
-    for (int off = 0; off < count; off += o.ubatch) {
-        next_spec::decode(target.get(), {prompt.begin() + off, prompt.begin() + std::min(count, off + o.ubatch)}, off);
+    const double setup_ms = std::chrono::duration<double, std::milli>(phase_timer::clock::now() - setup_start).count();
+    {
+        phase_timer timer(profile, prefill_ms);
+        for (int off = 0; off < count; off += o.ubatch) {
+            next_spec::decode(target.get(), {prompt.begin() + off, prompt.begin() + std::min(count, off + o.ubatch)}, off);
+        }
+        if (profile) llama_synchronize(target.get());
     }
     std::vector<llama_token> emitted;
     auto emit = [&](llama_token token) {
         if (!o.ignore_eos && llama_vocab_is_eog(vocab, token)) return false;
         emitted.push_back(token);
+        if (o.quiet) return true;
         std::vector<char> piece(128);
         int size = llama_token_to_piece(vocab, token, piece.data(), piece.size(), 0, true);
         if (size < 0) {
@@ -156,45 +186,104 @@ static int run(const options & o) {
         return true;
     };
     int pos = count, accepted_total = 0, proposed_total = 0, rounds = 0;
-    llama_token root = next_spec::greedy(target.get());
+    const auto generation_start = phase_timer::clock::now();
+    llama_token root;
+    {
+        phase_timer timer(profile, sampling_ms);
+        root = next_spec::greedy(target.get());
+    }
+    int zero_rounds = 0, partial_rounds = 0, full_rounds = 0;
     bool stopped = false;
     while (int(emitted.size()) < o.predict && emit(root)) {
         if (int(emitted.size()) == o.predict) break;
         if (o.ar) {
-            next_spec::decode(target.get(), {root}, pos++);
-            root = next_spec::greedy(target.get());
+            {
+                phase_timer timer(profile, ar_decode_ms);
+                next_spec::decode(target.get(), {root}, pos++);
+                if (profile) llama_synchronize(target.get());
+            }
+            {
+                phase_timer timer(profile, sampling_ms);
+                root = next_spec::greedy(target.get());
+            }
             continue;
         }
-        const next_spec::snapshot prefix(target.get());
+        std::optional<next_spec::snapshot> prefix;
+        {
+            phase_timer timer(profile, snapshot_ms);
+            prefix.emplace(target.get());
+        }
         const int budget = std::min(o.draft, o.predict - int(emitted.size()));
         std::vector<llama_token> verification{root};
         llama_token input = root;
-        for (int i = 0; i < budget; ++i) {
-            next_spec::decode(draft.get(), {input}, pos + i);
-            input = next_spec::greedy(draft.get());
-            verification.push_back(input);
+        {
+            phase_timer timer(profile, draft_ms);
+            for (int i = 0; i < budget; ++i) {
+                next_spec::decode(draft.get(), {input}, pos + i);
+                input = next_spec::greedy(draft.get());
+                verification.push_back(input);
+            }
         }
         proposed_total += budget;
-        prefix.restore(target.get());
-        next_spec::require(llama_memory_history_begin(llama_get_memory(target.get()), 0, pos, verification.size()),
-                           "could not begin verification history");
-        next_spec::decode(target.get(), verification, pos, true);
-        next_spec::require(llama_memory_history_finish(target.get()), "incomplete verification history");
-        int accepted = 0;
-        root = next_spec::greedy(target.get(), 0);
-        while (accepted < budget && verification[accepted + 1] == root) {
-            if (!emit(root)) { stopped = true; break; }
-            ++accepted;
-            root = next_spec::greedy(target.get(), accepted);
+        {
+            phase_timer timer(profile, restore_ms);
+            prefix->restore(target.get());
         }
-        next_spec::require(llama_memory_history_commit(target.get(), 0, accepted + 1, o.audit),
-                           "accepted-prefix history commit failed");
+        {
+            phase_timer timer(profile, verify_ms);
+            next_spec::require(llama_memory_history_begin(llama_get_memory(target.get()), 0, pos, verification.size()),
+                               "could not begin verification history");
+            next_spec::decode(target.get(), verification, pos, true);
+            next_spec::require(llama_memory_history_finish(target.get()), "incomplete verification history");
+        }
+        int accepted = 0;
+        {
+            phase_timer timer(profile, sampling_ms);
+            root = next_spec::greedy(target.get(), 0);
+            while (accepted < budget && verification[accepted + 1] == root) {
+                if (!emit(root)) { stopped = true; break; }
+                ++accepted;
+                root = next_spec::greedy(target.get(), accepted);
+            }
+        }
+        {
+            phase_timer timer(profile, commit_ms);
+            next_spec::require(llama_memory_history_commit(target.get(), 0, accepted + 1, o.audit),
+                               "accepted-prefix history commit failed");
+            if (profile) llama_synchronize(target.get());
+        }
+        if (accepted == 0) ++zero_rounds;
+        else if (accepted == budget) ++full_rounds;
+        else ++partial_rounds;
         pos += accepted + 1;
         accepted_total += accepted;
         ++rounds;
         if (stopped) break;
     }
-    std::fputc('\n', stdout);
+    if (profile) llama_synchronize(target.get());
+    const double generation_ms = std::chrono::duration<double, std::milli>(
+        phase_timer::clock::now() - generation_start).count();
+    if (!o.quiet) std::fputc('\n', stdout);
+    if (profile) {
+        std::ofstream out(o.timings_file);
+        next_spec::require(out.good(), "cannot open timings output");
+        out.precision(12);
+        out << "{\n  \"schema\": 1, \"ar\": " << (o.ar ? "true" : "false")
+            << ", \"audit\": " << (o.audit ? "true" : "false")
+            << ", \"quiet\": " << (o.quiet ? "true" : "false")
+            << ",\n  \"generated\": " << emitted.size()
+            << ", \"decode_tokens\": " << (emitted.empty() ? 0 : emitted.size() - 1)
+            << ", \"accepted\": " << accepted_total << ", \"proposed\": " << proposed_total
+            << ", \"rounds\": " << rounds << ", \"zero_rounds\": " << zero_rounds
+            << ", \"partial_rounds\": " << partial_rounds << ", \"full_rounds\": " << full_rounds
+            << ",\n  \"setup_ms\": " << setup_ms << ", \"prefill_ms\": " << prefill_ms
+            << ", \"generation_ms\": " << generation_ms
+            << ",\n  \"draft_ms\": " << draft_ms << ", \"verify_with_history_ms\": " << verify_ms
+            << ", \"snapshot_ms\": " << snapshot_ms << ", \"restore_ms\": " << restore_ms
+            << ", \"commit_ms\": " << commit_ms << ", \"ar_decode_ms\": " << ar_decode_ms
+            << ", \"sampling_ms\": " << sampling_ms << "\n}\n";
+        next_spec::require(out.good(), "cannot write timings output");
+    }
     if (!o.tokens_file.empty()) {
         std::ofstream out(o.tokens_file);
         next_spec::require(out.good(), "cannot open token output");
