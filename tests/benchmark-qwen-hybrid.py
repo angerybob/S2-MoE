@@ -8,6 +8,7 @@ from pathlib import Path
 import random
 import resource
 import subprocess
+import sys
 import time
 
 
@@ -91,7 +92,8 @@ def main():
                    "--draft-expert-topk", str(experts)]
         if depth == 0:
             command.append("--ar")
-        print("START " + label, flush=True)
+        sys.stdout.write("START " + label + "\n")
+        sys.stdout.flush()
         before = resource.getrusage(resource.RUSAGE_CHILDREN)
         start = time.monotonic()
         with (case_dir / "run.log").open("wb") as log:
@@ -109,13 +111,17 @@ def main():
         report["cases"].append(case)
         save()
         if completed.returncode:
-            raise RuntimeError(f"{label}: exit {completed.returncode}; see run.log")
+            raise RuntimeError(f"{label}: exit {completed.returncode}, see run.log")
         timing = json.loads((case_dir / "timing.json").read_text())
         tokens = json.loads((case_dir / "tokens.json").read_text())
         if reference is None:
             reference = tokens
-        phases = sum(timing[k] for k in ("draft_ms", "verify_with_history_ms", "snapshot_ms",
-                                        "restore_ms", "commit_ms", "ar_decode_ms", "sampling_ms"))
+        phases = sum(
+            timing[k] for k in (
+                "draft_ms", "verify_with_history_ms", "snapshot_ms",
+                "restore_ms", "commit_ms", "ar_decode_ms", "sampling_ms",
+            )
+        )
         valid = (tokens == reference and len(tokens) == args.tokens and not timing["audit"]
                  and timing["quiet"] and timing["decode_tokens"] == args.tokens - 1
                  and 0 <= phases <= timing["generation_ms"] + 0.1)
@@ -123,7 +129,8 @@ def main():
                      "decode_tokens_per_second": timing["decode_tokens"] * 1000 / timing["generation_ms"],
                      "other_ms": timing["generation_ms"] - phases})
         save()
-        print(f"END {label} valid={valid} tps={case['decode_tokens_per_second']:.4f}", flush=True)
+        sys.stdout.write(f"END {label} valid={valid} tps={case['decode_tokens_per_second']:.4f}\n")
+        sys.stdout.flush()
         if not valid:
             raise RuntimeError(f"{label}: token equivalence or timing accounting failed")
 
