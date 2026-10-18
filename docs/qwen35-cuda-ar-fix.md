@@ -1,5 +1,9 @@
 # Qwen3.5 CUDA AR-consistency fix and bounded-SSD validation
 
+Subsequent [GPU/SSD timing measurements](qwen35-ssd-postfix-speed.md) use
+these same corrected binaries. That speed matrix detects NVMe completion
+timeouts and reports fault-affected timings separately from correctness.
+
 The previously recorded Qwen3.5 GPU math failure at output index 17 is fixed
 for the tested configurations. The new AR and self-spec sequences match the
 **unchanged pre-fix ordinary-AR reference**, including all 64 tokens of the

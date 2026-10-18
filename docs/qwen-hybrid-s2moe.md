@@ -11,6 +11,8 @@ not qualify every model/precision/backend combination. The previously recorded
 Qwen3.5 CUDA math mismatch is addressed by the
 [AR-consistency fix and 32–64-token GPU SSD qualification](qwen35-cuda-ar-fix.md).
 Exact-mode and approximate expert-reuse results remain separate.
+The [post-fix speed matrix](qwen35-ssd-postfix-speed.md) separates Draft,
+verification, SSD reads and external state copies, with explicit storage-fault flags.
 
 See the [recorded Orin GPU validation and timing subset](qwen-hybrid-orin-validation.md)
 for the actual configurations and remaining qualification limits.

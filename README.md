@@ -46,6 +46,8 @@ GPU execution, exact versus approximate modes, and validation limits. Dedicated
 The paper's speedup claims do not automatically apply to these experimental ports.
 The [Qwen3.5 CUDA consistency report](docs/qwen35-cuda-ar-fix.md) records the
 attention-reduction fix and completed GPU SSD comparisons at 32–64 output tokens.
+The [post-fix GPU/SSD timing report](docs/qwen35-ssd-postfix-speed.md) records
+repeated depth/expert/pruning measurements and the observed NVMe timeout limitation.
 
 Use the `orin` branch for Jetson AGX Orin and the `4090` branch for a single RTX 4090.
 
