@@ -1,0 +1,40 @@
+name: Update Qwen3.5 PR with Orin GPU measurements and limitation
+on:
+  push:
+    branches: [feature/qwen35-hybrid-self-spec]
+    paths: ['.github/workflows/qwen35-update-gpu-pr.yml']
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const r = JSON.parse(fs.readFileSync('docs/validation/qwen35-orin-gpu-benchmark-20261018.json', 'utf8'));
+            const main = r.cases.filter(c => c.prompt_id === 'main');
+            if (r.source_dirty || main.length !== 22 || main.some(c => !c.valid || c.timing.audit) ||
+                r.placement_evidence.offloaded_layers !== 41 || r.coverage.math.status !== 'failed' ||
+                r.status !== 'failed') throw new Error('Evidence or recorded limitation changed');
+            const pr = (await github.rest.pulls.get({...context.repo, pull_number: 3})).data;
+            if (pr.state !== 'open' || pr.base.ref !== 'orin' ||
+                pr.head.ref !== 'feature/qwen35-hybrid-self-spec' || pr.head.sha !== context.sha) {
+              throw new Error('PR identity/head changed; refusing update');
+            }
+            const addition = fs.readFileSync('.github/qwen35-gpu-pr-update.md', 'utf8').trim();
+            const marker = /<!-- qwen35-orin-gpu-benchmark:start -->[\s\S]*?<!-- qwen35-orin-gpu-benchmark:end -->/;
+            let body = pr.body || '';
+            if (marker.test(body)) body = body.replace(marker, addition);
+            else {
+              const position = body.indexOf('<!-- qwen35-orin-benchmark:start -->');
+              body = position >= 0 ? body.slice(0, position) + addition + '\n\n' + body.slice(position) : body.trimEnd() + '\n\n' + addition;
+            }
+            body = body.replace('### Orin CPU performance follow-up (auditing disabled)', '### Supplementary CPU measurements (auditing disabled)');
+            if (body !== pr.body) await github.rest.pulls.update({...context.repo, pull_number: 3, body});
+            core.notice('PR #3 updated: GPU main sweep passed; math AR-equivalence limitation retained.');
+            await core.summary.addLink('Qwen3.5 experimental PR', pr.html_url).write();

@@ -176,7 +176,18 @@ passed on the implementation revision. Later report/documentation changes do
 not change inference behavior. This experimental contribution is related to
 issue #1 and does not close it or claim universal equivalence or acceleration.
 
-### Audit-disabled Orin CPU performance follow-up
+### Orin GPU performance and qualification follow-up
+
+A real Q8_0 CUDA sweep now offloads all 41 layers and measures AR against nine
+speculative configurations, with auditing disabled. The main 64-token matrix
+passes equality for all 22 runs but shows no speedup: AR 14.864 token/s versus
+8.597 token/s for the fastest tested configuration. Extra code checks pass;
+an extra math prompt still fails exact AR equality. General GPU qualification
+therefore remains incomplete. See the [GPU matrix, phase costs, numerical fix
+and remaining blocker](qwen35-orin-gpu-benchmark.md). The CPU report below is
+supplementary and does not establish GPU performance.
+
+### Supplementary Orin CPU performance follow-up
 
 A separate 64-token benchmark now compares AR with depth 1/4/8 and expert
 top-k 1/2/4, with auditing and token rendering disabled. On this recorded CPU
