@@ -1,4 +1,5 @@
 #include "ggml-cuda.h"
+#include "ggml-ar.h"
 #include "ggml-impl.h"
 #include "ggml-backend-impl.h"
 
@@ -2968,7 +2969,7 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
         use_mul_mat_q = true;
     }
 
-    if (ggml_cuda_q8_ar_compat() && !split && !force_mmq && !bad_padding_clear && src0->type == GGML_TYPE_Q8_0 &&
+    if ((ggml_cuda_q8_ar_compat() || dst->op_params[GGML_AR_COMPAT_OP_PARAM]) && !split && !force_mmq && !bad_padding_clear && src0->type == GGML_TYPE_Q8_0 &&
             dst->op_params[0] == GGML_PREC_F32 && src1->type == GGML_TYPE_F32 &&
             src0->buffer && ggml_backend_buffer_get_usage(src0->buffer) == GGML_BACKEND_BUFFER_USAGE_WEIGHTS &&
             src0->ne[2] == 1 && src0->ne[3] == 1 && src1->ne[2] == 1 && src1->ne[3] == 1 &&
@@ -2998,6 +2999,28 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
 
     //TODO update for generic tensor parallelism
     const int cc                 = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
+    if (dst->op_params[GGML_AR_COMPAT_OP_PARAM] &&
+            !split && !bad_padding_clear && dst->op_params[0] == GGML_PREC_F32 &&
+            (src0->type == GGML_TYPE_F32 || src0->type == GGML_TYPE_F16 || src0->type == GGML_TYPE_BF16) &&
+            src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32 &&
+            src0->ne[3] == 1 && src1->ne[3] == 1 && dst->ne[3] == 1 &&
+            src0->nb[0] == ggml_type_size(src0->type) && src1->nb[0] == sizeof(float) &&
+            dst->nb[0] == sizeof(float) && src0->ne[0] % 2 == 0) {
+        // Retain serial float reductions for verification, especially for F16
+        // attention caches. A few ulps can cross later Q8 activation bins.
+        // Preserve head broadcasting; tokens become independent sample blocks.
+        // Apply to scalar AR too: large caches can otherwise cross MMVF's
+        // performance heuristic and select a different scalar reduction.
+        ggml_tensor vectors = *src1;
+        ggml_tensor results = *dst;
+        vectors.ne[3] = vectors.ne[1];
+        results.ne[3] = results.ne[1];
+        vectors.ne[1] = results.ne[1] = 1;
+        vectors.nb[3] = src1->nb[1];
+        results.nb[3] = dst->nb[1];
+        ggml_cuda_mul_mat_vec_f(ctx, src0, &vectors, nullptr, &results);
+        return;
+    }
     bool use_batched_cublas_f16  = dst->op_params[0] != GGML_PREC_F32 && src0->type == GGML_TYPE_F16 && (src1->type == GGML_TYPE_F16 || !any_gpus_with_slow_fp16);
     bool use_batched_cublas_bf16 = dst->op_params[0] != GGML_PREC_F32 && src0->type == GGML_TYPE_BF16 && bf16_mma_hardware_available(cc);
     bool use_batched_cublas_f32  = src0->type == GGML_TYPE_F32;
@@ -3080,7 +3103,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
     // --- INSERT END ---
 
     if (!is_ssd_tensor && src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32) {
-        if (ggml_cuda_q8_ar_compat() && src0->type == GGML_TYPE_Q8_0 && dst->op_params[0] == GGML_PREC_F32 && ne2 > 1 &&
+        if ((ggml_cuda_q8_ar_compat() || dst->op_params[GGML_AR_COMPAT_OP_PARAM]) && src0->type == GGML_TYPE_Q8_0 && dst->op_params[0] == GGML_PREC_F32 && ne2 > 1 &&
                 ne3 == 1 && ne13 == 1 && ids->ne[2] == 1 && ids->ne[3] == 1) {
             // Explicit F32 hybrid verification retains the serial Q8 expert
             // arithmetic, with tokens mapped to independent sample blocks.
@@ -3506,8 +3529,9 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
         dst_slice.nb[3]  = dst_slice.ne[2] * dst_slice.nb[2];
         dst_slice.data   = dst_data_cur;
         dst_slice.op_params[0] = dst->op_params[0];
+        dst_slice.op_params[GGML_AR_COMPAT_OP_PARAM] = dst->op_params[GGML_AR_COMPAT_OP_PARAM];
 
-        if (is_ssd_mode && src0->type == GGML_TYPE_Q8_0 && ggml_cuda_q8_ar_compat() &&
+        if (is_ssd_mode && src0->type == GGML_TYPE_Q8_0 && (ggml_cuda_q8_ar_compat() || dst->op_params[GGML_AR_COMPAT_OP_PARAM]) &&
                 dst->op_params[0] == GGML_PREC_F32) {
             // A cold expert lives in a temporary pool allocation, outside the
             // ghost's borrowed model buffer. Generic dispatch consequently

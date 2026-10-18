@@ -1,3 +1,5 @@
+#include "ggml-ar.h"
+
 llm_build_qwen3next::llm_build_qwen3next(const llama_model & model, const llm_graph_params & params) :
     llm_graph_context_mamba(params), model(model) {
     ggml_tensor * cur;
@@ -80,6 +82,10 @@ llm_build_qwen3next::llm_build_qwen3next(const llama_model & model, const llm_gr
         auto * node = ggml_graph_node(gf, i);
         if (node->op == GGML_OP_MUL_MAT || node->op == GGML_OP_MUL_MAT_ID) {
             ggml_mul_mat_set_prec(node, GGML_PREC_F32);
+            // Single-token AR and all-token-logit verification use the same
+            // reduction geometry, independent of profiling state. Ordinary
+            // multi-token last-logit-only prefill retains its prior dispatch.
+            ggml_mul_mat_set_ar_compat(node, !is_draft_context && n_outputs == n_tokens);
         }
     }
 }
