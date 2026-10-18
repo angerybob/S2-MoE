@@ -929,8 +929,14 @@ void llama_model_loader::configure_ssd_budget(uint64_t bytes, bool explicit_hot_
     std::map<std::pair<int, int>, uint64_t> bundles;
     for (const auto & item : weights_map) {
         int layer, expert;
-        // Reserve per-tensor backend alignment as well as payload bytes.
-        const uint64_t size = (ggml_nbytes(item.second.tensor) + 511) & ~uint64_t(511);
+        // Include the CUDA quantized last-row padding (512-element boundary)
+        // and conservative per-tensor alignment, not just the GGUF payload.
+        const auto * tensor = item.second.tensor;
+        uint64_t payload = ggml_nbytes(tensor);
+        if (ggml_is_quantized(tensor->type) && tensor->ne[0] % 512) {
+            payload += ggml_row_size(tensor->type, 512 - tensor->ne[0] % 512);
+        }
+        const uint64_t size = (payload + 511) & ~uint64_t(511);
         if (parse_split_expert_name(item.first, layer, expert)) bundles[{layer, expert}] += size;
         else dense += size;
     }

@@ -1,0 +1,20 @@
+{
+  "engine": "hybrid",
+  "binary_path": "./build-next/bin/llama-speculative",
+  "model": "/path/to/Qwen3.5-35B-A3B-Q8_0.gguf",
+  "prompt": "Explain why the sky looks blue in two short sentences.",
+  "n_predict": 32,
+  "n_gpu_layers": 99,
+  "n_ctx": 128,
+  "n_ubatch": 32,
+  "threads": 8,
+  "ssd_moe": true,
+  "memory_budget_mib": 8192,
+  "runtime_reserve_mib": 3072,
+  "ignore_eos": true,
+  "speculative": {"draft_max": 8, "draft_expert_topk": 2, "branches": 2},
+  "pruning": {"enable": 1, "max_nodes": 31, "max_depth": 8, "tpot": 100, "bandwidth": 1, "score_thresh": 1},
+  "moe": {"reuse_strength": 0, "reuse_expert_cap": 0, "reuse_runtime": false},
+  "tokens_file": "qwen35-tokens.json",
+  "timings_file": "qwen35-timing.json"
+}

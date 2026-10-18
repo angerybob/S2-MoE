@@ -8,9 +8,15 @@ Qwen3.5 is a separate experimental entry point; see
 [issue #1](https://github.com/angerybob/S2-MoE/issues/1).
 General hybrid-model support is not implied by either integration.
 
+The subsequent [hybrid S2-MoE integration](qwen-hybrid-s2moe.md) adds budgeted
+SSD placement from packed/split GGUFs, adaptive trees/pruning, optional expert
+reuse and main-entry dispatch. The initial state mechanism and validation
+history are retained below.
+
 ## Scope
 
-- One request, sequence zero, one linear draft chain, one shared hybrid memory.
+- One request, sequence zero, one shared hybrid memory; linear drafts or bounded
+  DFS draft trees with staged path verification.
 - Target and draft share the same model weights. Only the draft's routed MoE
   expert count is reduced. Gated DeltaNet, full attention, and shared experts
   execute in every layer.
@@ -18,8 +24,7 @@ General hybrid-model support is not implied by either integration.
 - Draft depth 0–31. The history capacity is `draft_max + 1`, including the known
   target root. Verification must fit in one microbatch (`-ub >= draft_max + 1`).
 - CUDA graphs and llama graph reuse are disabled automatically. Layer skipping,
-  trees, multiple requests, adaptive pruning, stochastic acceptance, and other
-  speculative executables are outside this initial integration. Unsupported CLI
+  multiple requests and stochastic acceptance remain unsupported. Unsupported CLI
   options fail rather than silently enabling an unsafe combination.
 - Dense and indirect expert matrix operations request F32 accumulation. The CUDA
   backend preserves this request through expert sorting and cuBLAS fallbacks,
@@ -27,8 +32,8 @@ General hybrid-model support is not implied by either integration.
   execution. This conservative precision choice has a performance cost; this
   initial contribution makes no throughput or speedup claim.
 
-The original `llama-speculative` executable rejects Next models and points to
-this entry point; its existing tree decoder cannot rewind recurrent state.
+The `llama-speculative` executable now dispatches Next models to this hybrid
+driver; the original Transformer tree decoder cannot rewind recurrent state.
 Existing Transformer paths retain their behavior.
 
 ## Build and run
@@ -46,12 +51,14 @@ build-next/bin/llama-speculative-next \
   -ngl 99 -c 512 -ub 32 -n 32 --draft-max 8 --draft-expert-topk 2
 ```
 
-Use an existing Qwen3-Next GGUF with fused expert tensors for a resident run.
+Use an existing Qwen3-Next GGUF with packed expert tensors for a resident run.
 The loader also accepts the prototype's per-expert split layout for the existing
 SSD bridge (`blk.N.ffn_{gate,up,down}.EEE.weight`). For that layout, use
 `--ssd-moe` and optionally `--hot-experts /path/to/hot_experts.json`. The hot-expert
 file uses the repository's existing `{"gpu_experts": [[layer, expert], ...]}`
-format. No machine paths, model weights, or private cache configurations are
+format. Packed GGUFs also work directly in SSD mode; a split copy is unnecessary.
+See the current deployment guide for `--memory-budget-mib` and runtime reserves.
+No machine paths, model weights, or private cache configurations are
 included in this contribution. Conversion from Hugging Face is outside this port.
 
 `--ar` runs the same target greedily without speculation. `--tokens-file path`

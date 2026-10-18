@@ -68,6 +68,37 @@ if (TARGET test-qwen3next-state AND Python3_Interpreter_FOUND AND LLAMA_BUILD_EX
     set_tests_properties(qwen35-expert-draft PROPERTIES FIXTURES_REQUIRED qwen35-f32)
 endif()
 
+# Packed Q8 metadata and GPU SSD paths are qualified independently from the
+# existing floating-weight state fixtures.
+if (TARGET test-hybrid-placement AND Python3_Interpreter_FOUND AND LLAMA_BUILD_EXAMPLES AND NEXT_NUMPY_STATUS EQUAL 0)
+    foreach(HYBRID_ARCH qwen3next qwen35moe)
+        if (HYBRID_ARCH STREQUAL qwen3next)
+            set(HYBRID_NAME qwen3next)
+            set(HYBRID_EXECUTABLE llama-speculative-next)
+        else()
+            set(HYBRID_NAME qwen35)
+            set(HYBRID_EXECUTABLE llama-speculative-qwen35)
+        endif()
+        set(HYBRID_Q8 ${CMAKE_CURRENT_BINARY_DIR}/${HYBRID_NAME}-tiny-q8_0.gguf)
+        add_test(NAME ${HYBRID_NAME}-fixture-q8_0 COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/make-qwen3next-fixture.py ${HYBRID_Q8} q8_0 ${HYBRID_ARCH})
+        set_tests_properties(${HYBRID_NAME}-fixture-q8_0 PROPERTIES FIXTURES_SETUP ${HYBRID_NAME}-q8_0)
+        add_test(NAME ${HYBRID_NAME}-placement-q8_0 COMMAND test-hybrid-placement ${HYBRID_Q8})
+        set_tests_properties(${HYBRID_NAME}-placement-q8_0 PROPERTIES FIXTURES_REQUIRED ${HYBRID_NAME}-q8_0)
+        add_test(NAME ${HYBRID_NAME}-main-entry COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/test-hybrid-main.py $<TARGET_FILE:llama-speculative>
+            $<TARGET_FILE:${HYBRID_EXECUTABLE}> ${CMAKE_CURRENT_BINARY_DIR}/${HYBRID_NAME}-tiny-f32.gguf
+            ${PROJECT_SOURCE_DIR}/examples/speculative/run_spec.py)
+        set_tests_properties(${HYBRID_NAME}-main-entry PROPERTIES FIXTURES_REQUIRED ${HYBRID_NAME}-f32)
+        if (GGML_CUDA)
+            add_test(NAME ${HYBRID_NAME}-ssd-gpu COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test-hybrid-ssd.py --exe $<TARGET_FILE:${HYBRID_EXECUTABLE}>
+                --model ${HYBRID_Q8} --output ${CMAKE_CURRENT_BINARY_DIR}/${HYBRID_NAME}-ssd-gpu)
+            set_tests_properties(${HYBRID_NAME}-ssd-gpu PROPERTIES FIXTURES_REQUIRED ${HYBRID_NAME}-q8_0)
+        endif()
+    endforeach()
+endif()
+
 function(llama_build source)
     if (DEFINED LLAMA_TEST_NAME)
         set(TEST_TARGET ${LLAMA_TEST_NAME})

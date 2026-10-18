@@ -1,6 +1,7 @@
 #include "next-state.h"
 #include "ggml-backend.h"
 #include "s2moe.h"
+#include "hybrid-driver.h"
 
 #include <chrono>
 #include <cstdio>
@@ -275,7 +276,8 @@ static int generate(const options & o, llama_model * model, double model_load_ms
     auto check_memory = [&]() {
         const auto active = llama_get_buffer_usage(target.get());
         const auto other = draft ? llama_get_buffer_usage(draft.get()) : llama_buffer_usage{};
-        const uint64_t snapshots = o.branches > 1 ? 1 + std::min(o.draft, o.prune.max_depth) : 1;
+        const uint64_t snapshots = o.branches > 1 ? 1 + std::min({o.draft, o.prune.max_nodes,
+            o.prune.enabled ? o.prune.max_depth : o.draft}) : 1;
         runtime_bytes = std::max(runtime_bytes, active.state_bytes + active.compute_bytes + other.compute_bytes +
             snapshots * snapshot_bytes + (o.ssd ? uint64_t(128 * 1024 * 1024 + 8192) : uint64_t(0)) + uint64_t(64 * 1024 * 1024));
         if (o.memory_mib) {

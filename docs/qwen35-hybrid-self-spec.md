@@ -3,6 +3,12 @@
 Development branch: `feature/qwen35-hybrid-self-spec`, based on merged PR #2.
 This is a separate integration; Qwen3-Next validation does not qualify Qwen3.5.
 
+The subsequent [hybrid S2-MoE integration](qwen-hybrid-s2moe.md) connects this
+architecture to budgeted GPU SSD loading, resident experts, adaptive draft
+trees/pruning, optional verification-time reuse and the main executable.
+The earlier correctness and performance evidence below remains scoped to its
+recorded configurations; it does not qualify new deployment modes automatically.
+
 Acceptance is staged:
 
 1. Register `qwen35moe`, implement the distinct `qwen35` pre-tokenizer, load the
@@ -22,7 +28,7 @@ architecture-specific alpha/beta projections and key-head mapping. Text uses
 ordinary scalar positions and the NEOX reduction of canonical interleaved
 IMRoPE sections. Layouts with uncovered rotary pairs are rejected. Vision,
 multimodal positions, MTP,
-CUDA graphs, graph reuse, sampling, and multi-request/tree speculation are not
+CUDA graphs, graph reuse, sampling, and multi-request speculation are not
 supported by this experimental entry point. No performance claim is made.
 
 Source references: upstream llama.cpp `src/models/qwen35moe.cpp` and
@@ -114,11 +120,13 @@ state directly, including root-only acceptance and correction continuation.
   and 32, subsequent correction tokens, 64-token prefill, capacity/lifecycle
   misuse, multiple sequences and split verification batches.
 
-The real Q8_0 self-spec matrix passed as recorded below. Qwen3.5 SSD/hot-expert loading is explicitly
-rejected by this entry point until separately qualified. Quantized formats other
+The real Q8_0 CPU self-spec matrix passed as recorded below. SSD/hot-expert
+loading is now connected through the hybrid S2-MoE driver and has separate
+validation. Quantized formats other
 than the recorded Q8_0 model, fused recurrent projections, partial GPU offload,
-full-model CUDA inference, MTP, vision, stochastic sampling and multi-request/tree
-speculation remain unqualified.
+general CUDA correctness, MTP, vision, stochastic sampling and multi-request
+speculation remain unqualified. Bounded DFS draft trees use staged path
+verification, as described in the current deployment guide.
 
 Example (CPU, one greedy chain):
 

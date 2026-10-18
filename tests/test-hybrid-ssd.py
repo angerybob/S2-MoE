@@ -30,6 +30,11 @@ def main():
     cases = [] if args.real else [("resident-ar", ["--ar"], True)]
     placement = ["--ssd-moe", "--hot-experts", str(hot)]
     cases += [("ssd-ar", [*placement, "--ar"], True)]
+    if not args.real:
+        cases += [
+            ("ssd-all-cold-ar", ["--ssd-moe", "--ar"], True),
+            ("ssd-budget-auto-ar", ["--ssd-moe", "--ar", "--memory-budget-mib", "512", "--runtime-reserve-mib", "511"], True),
+        ]
     for depth, k in ((0, 1), (1, 1), (4, 1), (4, 2)):
         cases.append((f"ssd-d{depth}-k{k}", [*placement, "--draft-max", str(depth),
                      "--draft-expert-topk", str(k)], True))
@@ -53,6 +58,8 @@ def main():
         command = [str(args.exe), "-m", str(args.model), "-p", args.prompt, "-n", str(args.tokens),
                    "-c", "128", "-ub", "32", "-ngl", "99", "--ignore-eos", "--quiet",
                    "--tokens-file", str(tokens), "--timings-file", str(timing), *extra]
+        if not args.real and exact and "--ar" not in extra:
+            command.append("--audit-state-copies")
         with (args.output / f"{name}.log").open("wb") as log:
             result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=1200)
         entry = {"name": name, "command": command, "returncode": result.returncode, "exact_mode": exact}
@@ -67,8 +74,13 @@ def main():
             entry["matches_ar"] = actual == reference if exact else None
             if len(actual) != args.tokens or (exact and actual != reference):
                 failures.append(f"{name}: token mismatch")
-            if metrics["ssd"] and not (metrics["ssd_resident_hits"] > 0 and metrics["ssd_read_bytes"] > 0):
+            if metrics["ssd"] and "all-cold" not in name and "budget-auto" not in name and not (
+                    metrics["ssd_resident_hits"] > 0 and metrics["ssd_read_bytes"] > 0):
                 failures.append(f"{name}: missing partial-residency evidence")
+            if "all-cold" in name and not (metrics["ssd_resident_hits"] == 0 and metrics["ssd_read_bytes"] > 0):
+                failures.append(f"{name}: cold experts unexpectedly resident")
+            if "budget-auto" in name and not (metrics["ssd_resident_hits"] > 0 and metrics["ssd_read_bytes"] == 0):
+                failures.append(f"{name}: automatic placement did not retain this entire tiny fixture")
             if "prune-stop" in name and metrics["pruned_extensions"] <= 0:
                 failures.append(f"{name}: pruning did not execute")
         report["cases"].append(entry)

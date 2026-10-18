@@ -4,6 +4,7 @@
 #include "log.h"
 #include "llama.h"
 #include "gguf.h"
+#include "../speculative-next/hybrid-driver.h"
 #include "prune_routing_noise.h"
 
 #include <algorithm>
@@ -26,7 +27,11 @@
 #include <fstream>
 #include <iostream>
 #include <iomanip>
+#if defined(LLAMA_SPEC_NVTX3)
 #include <nvtx3/nvToolsExt.h>
+#elif defined(LLAMA_SPEC_NVTX2)
+#include <nvToolsExt.h>
+#endif
 
 
 // ================= Trace 结构体定义 =================
@@ -570,9 +575,13 @@ struct MoeUtilityCascadeState {
 };
 
 struct NvtxRange {
+#if defined(LLAMA_SPEC_NVTX3) || defined(LLAMA_SPEC_NVTX2)
     nvtxRangeId_t id;
     NvtxRange(const char * name) { id = nvtxRangeStartA(name); }
     ~NvtxRange() { nvtxRangeEnd(id); }
+#else
+    explicit NvtxRange(const char *) {}
+#endif
 };
 
 
@@ -1827,8 +1836,6 @@ static void draft_tree_prune(
         ++n_drafted;
     }
 }
-
-int llama_hybrid_main(int argc, char ** argv);
 
 static bool is_hybrid_gguf(int argc, char ** argv) {
     const char * path = nullptr;

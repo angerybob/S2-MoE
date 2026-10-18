@@ -17,7 +17,10 @@ int main(int argc, char ** argv) try {
     for (const auto & item : ssd.weights_map) {
         int layer = -1, expert = -1;
         char kind[32];
-        const uint64_t aligned = (ggml_nbytes(item.second.tensor) + 511) & ~uint64_t(511);
+        const auto * tensor = item.second.tensor;
+        const uint64_t padding = ggml_is_quantized(tensor->type) && tensor->ne[0] % 512
+            ? ggml_row_size(tensor->type, 512 - tensor->ne[0] % 512) : 0;
+        const uint64_t aligned = (ggml_nbytes(tensor) + padding + 511) & ~uint64_t(511);
         if (std::sscanf(item.first.c_str(), "blk.%d.ffn_%31[^.].%d.weight", &layer, kind, &expert) != 3) {
             dense += aligned;
             continue;

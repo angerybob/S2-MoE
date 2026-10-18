@@ -4,7 +4,7 @@ on:
     branches: [feature/qwen35-hybrid-self-spec]
   pull_request:
     branches: [orin]
-    paths: ['src/**', 'include/**', 'ggml/**', 'examples/speculative-next/**', 'examples/speculative-qwen35/**', 'tests/**', '.github/workflows/qwen35.yml']
+    paths: ['src/**', 'include/**', 'ggml/**', 'examples/speculative-next/**', 'examples/speculative-qwen35/**', 'examples/speculative/**', 'tests/**', '.github/workflows/qwen35.yml']
 permissions:
   contents: read
 jobs:
@@ -27,7 +27,7 @@ jobs:
       - name: Build candidate and an independent upstream CPU reference
         run: |
           cmake -S candidate -B candidate/build-qwen35 -DGGML_CUDA=OFF -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_SERVER=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
-          cmake --build candidate/build-qwen35 --target llama-speculative-qwen35 llama-speculative-next test-qwen35-ar test-qwen35-expert-draft test-qwen3next-state test-hybrid-placement -j2
+          cmake --build candidate/build-qwen35 --target llama-speculative llama-speculative-qwen35 llama-speculative-next test-qwen35-ar test-qwen35-expert-draft test-qwen3next-state test-hybrid-placement -j2
           cmake -S upstream -B upstream/build-cpu -DGGML_CUDA=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
           cmake --build upstream/build-cpu --target llama -j2
           c++ -O2 -std=c++17 -Iupstream/include -Iupstream/ggml/include candidate/tests/qwen35-reference-ar.cpp -Lupstream/build-cpu/bin -lllama -lggml -lggml-base -Wl,-rpath,$GITHUB_WORKSPACE/upstream/build-cpu/bin -o upstream/build-cpu/bin/qwen35-ar-reference
