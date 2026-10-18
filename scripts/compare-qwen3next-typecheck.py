@@ -63,8 +63,13 @@ def main():
     (output / "pip-freeze.txt").write_text(freeze.stdout, encoding="utf-8")
     baseline = check(base, args.pyright.resolve(), output, "base")
     branch = check(candidate, args.pyright.resolve(), output, "candidate")
-    before = Counter(json.dumps(d, sort_keys=True) for d in baseline["diagnostics"])
-    after = Counter(json.dumps(d, sort_keys=True) for d in branch["diagnostics"])
+    # Inserting a dispatcher moves old diagnostics without introducing an
+    # error. Match file/severity/rule/message and preserve multiplicity; retain
+    # every original position in the raw baseline/candidate reports for review.
+    def identity(diagnostic):
+        return json.dumps({k: v for k, v in diagnostic.items() if k != "range"}, sort_keys=True)
+    before = Counter(identity(d) for d in baseline["diagnostics"])
+    after = Counter(identity(d) for d in branch["diagnostics"])
     added = [json.loads(d) for d in (after - before).elements()]
     removed = [json.loads(d) for d in (before - after).elements()]
     result = {"schema": 1, "python": sys.version, "platform": platform.platform(), "pyright": version,
@@ -72,6 +77,8 @@ def main():
               "cli_flags": ["--level", "warning", "--warnings", "--outputjson"],
               "base": baseline, "candidate": branch, "added": added, "removed": removed,
               "diagnostics_identical": before == after, "new_diagnostics": len(added)}
+    result["identity_fields"] = ["file", "severity", "rule", "message"]
+    result["raw_diagnostics_identical"] = baseline["diagnostics"] == branch["diagnostics"]
     (output / "comparison.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     summary = (f"## Qwen3-Next / orin type-check comparison\n\n"
                f"Same Python process environment and dependency inputs; {version}.\n\n"
@@ -82,6 +89,7 @@ def main():
                f"{branch['summary']['warningCount']} | {branch['exit_code']} |\n\n"
                f"New diagnostics: **{len(added)}**; removed: **{len(removed)}**; "
                f"identical normalized diagnostics: **{before == after}**.\n\n"
+               f"Diagnostic identity excludes source positions; full original ranges are retained in the raw reports.\n\n"
                f"Raw reports and `pip-freeze.txt` are in the uploaded artifact. "
                f"A successful comparison does not mean the repository type-check passes.\n")
     (output / "summary.md").write_text(summary, encoding="utf-8")

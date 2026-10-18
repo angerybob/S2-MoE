@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <climits>
 #include <cstdio>
 #include <cstring>
 #include <cctype>
