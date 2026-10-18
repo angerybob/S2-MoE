@@ -5,12 +5,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 
 struct options {
-    std::string model, prompt = "The capital of France is", hot, tokens_file, timings_file;
+    std::string model, prompt = "The capital of France is", hot, tokens_file, timings_file, benchmark_plan;
     int predict = 32, draft = 8, experts = 2, gpu_layers = 99, context = 512, ubatch = 32, threads = 8;
     bool ssd = false, ar = false, audit = false, ignore_eos = false, quiet = false;
 };
@@ -45,6 +47,7 @@ static void usage(const char * exe) {
 #endif
         "       [--audit-state-copies] [--ar] [--tokens-file file] [--ignore-eos] [-t 8]\n"
         "       [--timings-file file] [--quiet]\n"
+        "       [--benchmark-plan file] (reuse model, fresh contexts for each case)\n"
         "One request/branch, shared hybrid memory, raw prompt, greedy sampling only.\n"
         "All recurrent/full-attention layers and shared experts remain active.\n"
 #ifdef LLAMA_EXPERIMENTAL_QWEN35
@@ -81,6 +84,7 @@ static options parse(int argc, char ** argv) {
         else if (arg == "--hot-experts") o.hot = value();
         else if (arg == "--tokens-file") o.tokens_file = value();
         else if (arg == "--timings-file") o.timings_file = value();
+        else if (arg == "--benchmark-plan") o.benchmark_plan = value();
         else if (arg == "--quiet") o.quiet = true;
         else if (arg == "--ssd-moe") o.ssd = true;
         else if (arg == "--ar") o.ar = true;
@@ -99,35 +103,11 @@ static options parse(int argc, char ** argv) {
     return o;
 }
 
-static int run(const options & o) {
+static int generate(const options & o, llama_model * model, double model_load_ms) {
     const bool profile = !o.timings_file.empty();
     const auto setup_start = phase_timer::clock::now();
     double prefill_ms = 0, draft_ms = 0, verify_ms = 0, snapshot_ms = 0;
     double restore_ms = 0, commit_ms = 0, ar_decode_ms = 0, sampling_ms = 0;
-#ifdef LLAMA_EXPERIMENTAL_QWEN35
-    next_spec::require(!o.ssd && o.hot.empty(), "Qwen3.5 SSD expert loading is not yet qualified");
-#endif
-    next_spec::disable_graphs();
-    llama_backend_init();
-    ggml_backend_load_all();
-    auto mp = llama_model_default_params();
-    ggml_backend_dev_t cpu_only[] = {nullptr};
-    if (o.gpu_layers == 0) mp.devices = cpu_only;
-    mp.n_gpu_layers = o.gpu_layers;
-    mp.use_ssd_moe = o.ssd;
-    mp.hot_experts_path = o.hot.empty() ? nullptr : o.hot.c_str();
-    mp.moe_reuse_strength = 0;
-    mp.moe_reuse_expert_cap = 0;
-    std::unique_ptr<llama_model, decltype(&llama_model_free)> model(
-        llama_model_load_from_file(o.model.c_str(), mp), llama_model_free);
-    next_spec::require(model != nullptr, "model loading failed");
-    char arch[64] = {};
-    llama_model_meta_val_str(model.get(), "general.architecture", arch, sizeof(arch));
-#ifdef LLAMA_EXPERIMENTAL_QWEN35
-    next_spec::require(std::string(arch) == "qwen35moe", "this executable only supports qwen35moe GGUF models");
-#else
-    next_spec::require(std::string(arch) == "qwen3next", "this executable only supports qwen3next GGUF models");
-#endif
     auto cp = llama_context_default_params();
     cp.n_ctx = o.context;
     cp.n_batch = std::max(64, o.ubatch);
@@ -138,12 +118,12 @@ static int run(const options & o) {
     cp.kv_unified = true;
     cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
     std::unique_ptr<llama_context, decltype(&llama_free)> target(
-        llama_init_from_model(model.get(), cp), llama_free);
+        llama_init_from_model(model, cp), llama_free);
     next_spec::require(target != nullptr, "target context creation failed");
     // Declaration order ensures the draft releases its borrowed memory first.
     std::unique_ptr<llama_context, decltype(&llama_free)> draft(nullptr, llama_free);
     if (!o.ar) {
-        draft.reset(llama_init_from_model(model.get(), cp));
+        draft.reset(llama_init_from_model(model, cp));
         next_spec::require(draft != nullptr, "draft context creation failed");
         llama_context_set_draft_context(draft.get(), true);
         llama_context_set_draft_expert_topk(draft.get(), o.experts);
@@ -151,7 +131,7 @@ static int run(const options & o) {
         next_spec::require(llama_memory_history_reserve(llama_get_memory(target.get()), o.draft + 1),
                            "history reservation failed");
     }
-    const auto * vocab = llama_model_get_vocab(model.get());
+    const auto * vocab = llama_model_get_vocab(model);
     std::vector<llama_token> prompt(o.prompt.size() + 16);
     int count = llama_tokenize(vocab, o.prompt.c_str(), o.prompt.size(), prompt.data(), prompt.size(), true, true);
     if (count < 0) {
@@ -161,7 +141,8 @@ static int run(const options & o) {
     next_spec::require(count > 0, "prompt must tokenize to at least one token");
     prompt.resize(count);
     next_spec::require(int64_t(count) + o.predict <= o.context, "prompt + output exceeds context capacity");
-    const double setup_ms = std::chrono::duration<double, std::milli>(phase_timer::clock::now() - setup_start).count();
+    const double setup_ms = std::chrono::duration<double, std::milli>(phase_timer::clock::now() - setup_start).count()
+        + (o.benchmark_plan.empty() ? model_load_ms : 0);
     {
         phase_timer timer(profile, prefill_ms);
         for (int off = 0; off < count; off += o.ubatch) {
@@ -271,6 +252,8 @@ static int run(const options & o) {
         out << "{\n  \"schema\": 1, \"ar\": " << (o.ar ? "true" : "false")
             << ", \"audit\": " << (o.audit ? "true" : "false")
             << ", \"quiet\": " << (o.quiet ? "true" : "false")
+            << ", \"resident_model\": " << (o.benchmark_plan.empty() ? "false" : "true")
+            << ", \"model_load_ms\": " << model_load_ms
             << ",\n  \"generated\": " << emitted.size()
             << ", \"decode_tokens\": " << (emitted.empty() ? 0 : emitted.size() - 1)
             << ", \"accepted\": " << accepted_total << ", \"proposed\": " << proposed_total
@@ -294,6 +277,62 @@ static int run(const options & o) {
     }
     std::fprintf(stderr, "NEXT_SPEC_RESULT generated=%zu accepted=%d proposed=%d rounds=%d commit_replay=0\n",
                  emitted.size(), accepted_total, proposed_total, rounds);
+    return 0;
+}
+
+static int run(const options & o) {
+    const auto model_start = phase_timer::clock::now();
+#ifdef LLAMA_EXPERIMENTAL_QWEN35
+    next_spec::require(!o.ssd && o.hot.empty(), "Qwen3.5 SSD expert loading is not yet qualified");
+#endif
+    next_spec::disable_graphs();
+    llama_backend_init();
+    ggml_backend_load_all();
+    auto mp = llama_model_default_params();
+    ggml_backend_dev_t cpu_only[] = {nullptr};
+    if (o.gpu_layers == 0) mp.devices = cpu_only;
+    mp.n_gpu_layers = o.gpu_layers;
+    mp.use_ssd_moe = o.ssd;
+    mp.hot_experts_path = o.hot.empty() ? nullptr : o.hot.c_str();
+    mp.moe_reuse_strength = 0;
+    mp.moe_reuse_expert_cap = 0;
+    std::unique_ptr<llama_model, decltype(&llama_model_free)> model(
+        llama_model_load_from_file(o.model.c_str(), mp), llama_model_free);
+    next_spec::require(model != nullptr, "model loading failed");
+    char arch[64] = {};
+    llama_model_meta_val_str(model.get(), "general.architecture", arch, sizeof(arch));
+#ifdef LLAMA_EXPERIMENTAL_QWEN35
+    next_spec::require(std::string(arch) == "qwen35moe", "this executable only supports qwen35moe GGUF models");
+#else
+    next_spec::require(std::string(arch) == "qwen3next", "this executable only supports qwen3next GGUF models");
+#endif
+    const double model_load_ms = std::chrono::duration<double, std::milli>(
+        phase_timer::clock::now() - model_start).count();
+    if (o.benchmark_plan.empty()) return generate(o, model.get(), model_load_ms);
+
+    next_spec::require(o.quiet && !o.audit, "--benchmark-plan requires --quiet and auditing disabled");
+    std::ifstream plan(o.benchmark_plan);
+    next_spec::require(plan.good(), "cannot open benchmark plan");
+    std::string line;
+    size_t index = 0;
+    while (std::getline(plan, line)) {
+        if (line.empty()) continue;
+        options item = o;
+        std::string mode, extra;
+        std::istringstream row(line);
+        next_spec::require(bool(row >> mode >> item.draft >> item.experts
+            >> std::quoted(item.tokens_file) >> std::quoted(item.timings_file)), "invalid benchmark row");
+        next_spec::require(!(row >> extra) && (mode == "AR" || mode == "SPEC")
+            && item.draft >= 0 && item.draft <= 31 && item.draft + 1 <= item.ubatch
+            && item.experts > 0 && !item.tokens_file.empty() && !item.timings_file.empty(), "invalid benchmark case");
+        item.ar = mode == "AR";
+        std::fprintf(stderr, "NEXT_SPEC_CASE_BEGIN index=%zu mode=%s depth=%d experts=%d\n",
+            index, mode.c_str(), item.draft, item.experts);
+        const int result = generate(item, model.get(), model_load_ms);
+        next_spec::require(result == 0, "benchmark case failed");
+        std::fprintf(stderr, "NEXT_SPEC_CASE_END index=%zu\n", index++);
+    }
+    next_spec::require(index > 0 && !plan.bad(), "empty or unreadable benchmark plan");
     return 0;
 }
 

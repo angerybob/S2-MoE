@@ -122,15 +122,16 @@ per-prompt token equality. This is a small confirmation, not a second full grid.
 
 Use a fresh output directory on a suitable Linux CPU host with the recorded
 model and build. The opt-in harness never downloads weights or changes global
-power/cache settings. Its child-only address-space limit defaults to 46 GiB;
-adjust it explicitly for a different host.
+power/cache settings. The recorded CPU runs use a child-only address-space limit of 46 GiB.
+Pass it explicitly for CPU reproduction; leave this limit disabled for CUDA,
+which reserves large virtual address ranges.
 
 ```sh
 python3 tests/benchmark-qwen-hybrid.py \
   --binary build-qwen35/bin/llama-speculative-qwen35 \
   --model /path/to/Qwen3.5-35B-A3B-Q8_0.gguf \
   --output /path/to/fresh-results \
-  --tokens 64 --threads 8 --context 128 --ubatch 32 \
+  --tokens 64 --threads 8 --context 128 --ubatch 32 --gpu-layers 0 --limit-gib 46 \
   --depths 1 4 8 --experts 1 2 4 --repeats 2
 ```
 

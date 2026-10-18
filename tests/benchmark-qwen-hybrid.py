@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Opt-in Linux CPU benchmark of the experimental hybrid entry points (no audit)."""
+"""Opt-in Linux CPU/CUDA benchmark of experimental hybrid entry points (no audit)."""
 import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import random
 import resource
+import signal
 import subprocess
 import sys
 import time
@@ -40,16 +42,22 @@ def main():
     parser.add_argument("--threads", type=int, default=8)
     parser.add_argument("--context", type=int, default=128)
     parser.add_argument("--ubatch", type=int, default=32)
+    parser.add_argument("--gpu-layers", type=int, default=99, help="99: full GPU offload; 0: CPU only")
     parser.add_argument("--depths", type=int, nargs="+", default=[1, 4, 8])
     parser.add_argument("--experts", type=int, nargs="+", default=[1, 2, 4])
     parser.add_argument("--repeats", type=int, default=2)
+    parser.add_argument("--resident-model", action="store_true", help="load once, fresh contexts for each case")
+    parser.add_argument("--min-available-gib", type=float, default=2.5, help="resident-run physical memory guard")
     parser.add_argument("--timeout", type=int, default=900)
-    parser.add_argument("--limit-gib", type=int, default=46, help="child address-space cap; 0 disables")
+    parser.add_argument("--limit-gib", type=int, default=0, help="CPU-only child address-space cap; 0 disables")
     args = parser.parse_args()
     if (args.tokens < 2 or args.repeats < 1 or args.threads < 1 or args.timeout < 1
+            or args.gpu_layers < 0 or args.limit_gib < 0
             or not all(1 <= d <= 31 and d + 1 <= args.ubatch for d in args.depths)
             or not all(k > 0 for k in args.experts)):
         parser.error("invalid generation, draft, or repetition limits")
+    if args.gpu_layers > 0 and args.limit_gib:
+        parser.error("CUDA reserves large virtual address ranges; use --limit-gib 0")
     binary, model, output = args.binary.resolve(), args.model.resolve(), args.output.resolve()
     binary_stamp, model_stamp = stamp(binary), stamp(model)
     output.mkdir(parents=True, exist_ok=False)
@@ -62,7 +70,8 @@ def main():
               "binary": {**binary_stamp, "sha256": hashlib.sha256(binary.read_bytes()).hexdigest()},
               "model": model_stamp, "prompt": args.prompt,
               "settings": {"tokens": args.tokens, "threads": args.threads, "context": args.context,
-                           "ubatch": args.ubatch, "gpu_layers": 0, "audit": False, "quiet": True,
+                           "ubatch": args.ubatch, "gpu_layers": args.gpu_layers, "audit": False, "quiet": True,
+                           "resident_model": args.resident_model,
                            "greedy": True, "ignore_eos": True, "address_space_limit_gib": args.limit_gib},
               "throughput_definition": "(generated - 1) / post-prefill generation seconds; first token comes from prefill",
               "phase_definition": "draft includes its greedy selection; verify includes history writes; snapshot/restore/commit are separate API wall times",
@@ -80,13 +89,12 @@ def main():
     reference = None
 
     def run(label, depth=0, experts=1, warmup=False):
-        nonlocal reference
         if stamp(binary) != binary_stamp or stamp(model) != model_stamp:
             raise RuntimeError("binary or model changed during benchmark")
         case_dir = output / label
         case_dir.mkdir()
         command = [str(binary), "-m", str(model), "-p", args.prompt, "-n", str(args.tokens),
-                   "-ngl", "0", "-c", str(args.context), "-ub", str(args.ubatch), "-t", str(args.threads),
+                   "-ngl", str(args.gpu_layers), "-c", str(args.context), "-ub", str(args.ubatch), "-t", str(args.threads),
                    "--ignore-eos", "--quiet", "--timings-file", str(case_dir / "timing.json"),
                    "--tokens-file", str(case_dir / "tokens.json"), "--draft-max", str(depth),
                    "--draft-expert-topk", str(experts)]
@@ -108,10 +116,16 @@ def main():
                 "user_seconds": after.ru_utime - before.ru_utime,
                 "system_seconds": after.ru_stime - before.ru_stime,
                 "machine_after": machine(), "valid": False}
+        collect(case)
+
+    def collect(case):
+        nonlocal reference
+        label = case["id"]
+        case_dir = output / label
         report["cases"].append(case)
         save()
-        if completed.returncode:
-            raise RuntimeError(f"{label}: exit {completed.returncode}, see run.log")
+        if case["exit_code"]:
+            raise RuntimeError(f"{label}: exit {case['exit_code']}, see run.log")
         timing = json.loads((case_dir / "timing.json").read_text())
         tokens = json.loads((case_dir / "tokens.json").read_text())
         if reference is None:
@@ -134,19 +148,93 @@ def main():
         if not valid:
             raise RuntimeError(f"{label}: token equivalence or timing accounting failed")
 
-    save()
-    try:
-        # Same full output as measured runs, excluded from aggregates. Warms the
-        # model pages used by the AR trajectory without clearing global caches.
-        run("warmup-ar", warmup=True)
+    def schedule():
+        items = [("warmup-ar", 0, 1, True)]
         order = [(d, k) for d in args.depths for k in args.experts]
         rng = random.Random(35018)
         for repetition in range(args.repeats):
-            run(f"r{repetition + 1}-ar")
+            items.append((f"r{repetition + 1}-ar", 0, 1, False))
             rng.shuffle(order)
-            for depth, experts in order:
-                run(f"r{repetition + 1}-d{depth}-k{experts}", depth, experts)
-        run("final-ar")
+            items.extend((f"r{repetition + 1}-d{d}-k{k}", d, k, False) for d, k in order)
+        items.append(("final-ar", 0, 1, False))
+        return items
+
+    def resident(items):
+        rows = []
+        for label, depth, experts, _ in items:
+            case_dir = output / label
+            case_dir.mkdir()
+            paths = [json.dumps(str(case_dir / name), ensure_ascii=False) for name in ("tokens.json", "timing.json")]
+            mode = "AR" if depth == 0 else "SPEC"
+            rows.append(f"{mode} {depth} {experts} " + " ".join(paths))
+        plan = output / "plan.txt"
+        plan.write_text("\n".join(rows) + "\n", encoding="utf-8")
+        command = [str(binary), "-m", str(model), "-p", args.prompt, "-n", str(args.tokens),
+                   "-ngl", str(args.gpu_layers), "-c", str(args.context), "-ub", str(args.ubatch),
+                   "-t", str(args.threads), "--ignore-eos", "--quiet", "--benchmark-plan", str(plan)]
+        before = resource.getrusage(resource.RUSAGE_CHILDREN)
+        start = time.monotonic()
+        next_case = 0
+        low = None
+
+        def harvest():
+            nonlocal next_case
+            while next_case < len(items):
+                label, depth, experts, warmup = items[next_case]
+                case_dir = output / label
+                try:
+                    json.loads((case_dir / "tokens.json").read_text())
+                    json.loads((case_dir / "timing.json").read_text())
+                except (OSError, json.JSONDecodeError):
+                    break
+                if stamp(binary) != binary_stamp or stamp(model) != model_stamp:
+                    raise RuntimeError("binary or model changed during benchmark")
+                collect({"id": label, "depth": depth, "experts": experts, "warmup": warmup,
+                         "exit_code": 0, "log": "resident.log", "process_seconds": None,
+                         "major_faults": None, "minor_faults": None, "input_blocks": None,
+                         "user_seconds": None, "system_seconds": None,
+                         "machine_after": machine(), "valid": False})
+                next_case += 1
+
+        with (output / "resident.log").open("wb") as log:
+            child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
+                                     stdin=subprocess.DEVNULL, preexec_fn=limit, start_new_session=True)
+            try:
+                while child.poll() is None:
+                    mem = {line.split(":")[0]: int(line.split()[1])
+                           for line in Path("/proc/meminfo").read_text().splitlines()}
+                    available = mem["MemAvailable"] / 1024**2
+                    low = available if low is None else min(low, available)
+                    if available < args.min_available_gib or time.monotonic() - start > args.timeout:
+                        raise RuntimeError("resident child reached memory guard or timeout")
+                    harvest()
+                    time.sleep(0.25)
+                harvest()
+                if child.returncode or next_case != len(items):
+                    raise RuntimeError(f"resident child failed: exit {child.returncode}, {next_case}/{len(items)} cases")
+            finally:
+                if child.poll() is None:
+                    os.killpg(child.pid, signal.SIGTERM)
+                    try:
+                        child.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(child.pid, signal.SIGKILL)
+                        child.wait()
+        after = resource.getrusage(resource.RUSAGE_CHILDREN)
+        report["resident_process"] = {"seconds": time.monotonic() - start, "min_available_gib": low,
+                                      "major_faults": after.ru_majflt - before.ru_majflt,
+                                      "minor_faults": after.ru_minflt - before.ru_minflt,
+                                      "model_load_ms": report["cases"][0]["timing"]["model_load_ms"]}
+
+    save()
+    try:
+        # Excluded full-length AR warmup; measured AR brackets each sweep.
+        items = schedule()
+        if args.resident_model:
+            resident(items)
+        else:
+            for label, depth, experts, warmup in items:
+                run(label, depth, experts, warmup)
         report.update({"status": "passed", "finished_at": datetime.now(timezone.utc).isoformat()})
     except Exception as error:
         report.update({"status": "failed", "error": str(error)})
