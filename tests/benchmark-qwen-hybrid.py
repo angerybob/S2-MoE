@@ -47,6 +47,7 @@ def main():
     parser.add_argument("--experts", type=int, nargs="+", default=[1, 2, 4])
     parser.add_argument("--repeats", type=int, default=2)
     parser.add_argument("--resident-model", action="store_true", help="load once, fresh contexts for each case")
+    parser.add_argument("--confirm-prompts", action="store_true", help="resident code/math checks at depths 1/8, top-k 4")
     parser.add_argument("--min-available-gib", type=float, default=2.5, help="resident-run physical memory guard")
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--limit-gib", type=int, default=0, help="CPU-only child address-space cap; 0 disables")
@@ -58,6 +59,8 @@ def main():
         parser.error("invalid generation, draft, or repetition limits")
     if args.gpu_layers > 0 and args.limit_gib:
         parser.error("CUDA reserves large virtual address ranges; use --limit-gib 0")
+    if args.confirm_prompts and not args.resident_model:
+        parser.error("--confirm-prompts requires --resident-model")
     binary, model, output = args.binary.resolve(), args.model.resolve(), args.output.resolve()
     binary_stamp, model_stamp = stamp(binary), stamp(model)
     output.mkdir(parents=True, exist_ok=False)
@@ -86,7 +89,15 @@ def main():
         if args.limit_gib:
             resource.setrlimit(resource.RLIMIT_AS, (args.limit_gib * 1024**3,) * 2)
 
-    reference = None
+    prompts = {"main": args.prompt}
+    if args.confirm_prompts:
+        prompts.update({"code": "Write a Python function that returns the nth Fibonacci number.",
+                        "math": "Solve step by step: A shop sells 12 notebooks at 3 dollars each. What is the total price?"})
+    report["prompts"] = prompts
+    references = {}
+
+    def prompt_id(label):
+        return label.split("-")[1] if label.startswith("confirm-") else "main"
 
     def run(label, depth=0, experts=1, warmup=False):
         if stamp(binary) != binary_stamp or stamp(model) != model_stamp:
@@ -119,8 +130,8 @@ def main():
         collect(case)
 
     def collect(case):
-        nonlocal reference
         label = case["id"]
+        case["prompt_id"] = prompt_id(label)
         case_dir = output / label
         report["cases"].append(case)
         save()
@@ -128,8 +139,7 @@ def main():
             raise RuntimeError(f"{label}: exit {case['exit_code']}, see run.log")
         timing = json.loads((case_dir / "timing.json").read_text())
         tokens = json.loads((case_dir / "tokens.json").read_text())
-        if reference is None:
-            reference = tokens
+        reference = references.setdefault(case["prompt_id"], tokens)
         phases = sum(
             timing[k] for k in (
                 "draft_ms", "verify_with_history_ms", "snapshot_ms",
@@ -158,6 +168,13 @@ def main():
             rng.shuffle(order)
             items.extend((f"r{repetition + 1}-d{d}-k{k}", d, k, False) for d, k in order)
         items.append(("final-ar", 0, 1, False))
+        if args.confirm_prompts:
+            for name in ("code", "math"):
+                items.extend([(f"confirm-{name}-warmup-ar", 0, 1, True),
+                              (f"confirm-{name}-ar", 0, 1, False),
+                              (f"confirm-{name}-d1-k4", 1, 4, False),
+                              (f"confirm-{name}-d8-k4", 8, 4, False),
+                              (f"confirm-{name}-final-ar", 0, 1, False)])
         return items
 
     def resident(items):
@@ -167,7 +184,8 @@ def main():
             case_dir.mkdir()
             paths = [json.dumps(str(case_dir / name), ensure_ascii=False) for name in ("tokens.json", "timing.json")]
             mode = "AR" if depth == 0 else "SPEC"
-            rows.append(f"{mode} {depth} {experts} " + " ".join(paths))
+            rows.append(f"{mode} {depth} {experts} " + " ".join(paths)
+                        + " " + json.dumps(prompts[prompt_id(label)], ensure_ascii=False))
         plan = output / "plan.txt"
         plan.write_text("\n".join(rows) + "\n", encoding="utf-8")
         command = [str(binary), "-m", str(model), "-p", args.prompt, "-n", str(args.tokens),

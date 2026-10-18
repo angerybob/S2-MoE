@@ -365,10 +365,11 @@ static int run(const options & o) {
     while (std::getline(plan, line)) {
         if (line.empty()) continue;
         options item = o;
-        std::string mode, extra;
+        std::string mode, extra, prompt;
         std::istringstream row(line);
         next_spec::require(bool(row >> mode >> item.draft >> item.experts
             >> std::quoted(item.tokens_file) >> std::quoted(item.timings_file)), "invalid benchmark row");
+        if (row >> std::quoted(prompt)) item.prompt = prompt;
         next_spec::require(!(row >> extra) && (mode == "AR" || mode == "SPEC")
             && item.draft >= 0 && item.draft <= 31 && item.draft + 1 <= item.ubatch
             && item.experts > 0 && !item.tokens_file.empty() && !item.timings_file.empty(), "invalid benchmark case");
