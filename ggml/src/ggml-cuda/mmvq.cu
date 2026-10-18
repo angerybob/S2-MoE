@@ -161,11 +161,13 @@ static __global__ void mul_mat_vec_q(
     const     int blocks_per_row_x = ncols_x / qk;
     constexpr int blocks_per_iter = vdr * nwarps*warp_size / qi;
 
-    // The MUL_MAT_ID code path with ids != nullptr is only implemented for ncols_dst == 1.
+    // Indexed projections use one vector column; tokens occupy sample blocks.
     const uint32_t channel_dst = blockIdx.y;
-    const uint32_t channel_x   = ncols_dst == 1 && ids ? ids[channel_dst]                     : fastdiv(channel_dst, channel_ratio);
-    const uint32_t channel_y   = ncols_dst == 1 && ids ? fastmodulo(channel_dst, nchannels_y) : channel_dst;
     const uint32_t sample_dst  = blockIdx.z;
+    const uint32_t channel_x   = ncols_dst == 1 && ids
+        ? ids[sample_dst * (stride_sample_dst / stride_channel_dst) + channel_dst]
+        : fastdiv(channel_dst, channel_ratio);
+    const uint32_t channel_y   = ncols_dst == 1 && ids ? fastmodulo(channel_dst, nchannels_y) : channel_dst;
     const uint32_t sample_x    = fastdiv(sample_dst, sample_ratio);
     const uint32_t sample_y    = sample_dst;
 
@@ -502,11 +504,21 @@ void ggml_cuda_mul_mat_vec_q(
     GGML_ASSERT(        nb0        == ts_dst);
     GGML_ASSERT(!ids || ids->nb[0] == ggml_type_size(ids->type));
 
-    GGML_ASSERT(!ids || ne12 == 1); // Implementation is only correct for batch size 1.
+    GGML_ASSERT(!ids || (ne13 == 1 && ne3 == 1 && ggml_is_contiguous(dst)));
 
     const float   * src1_d =       (const float   *) src1->data;
     const int32_t *  ids_d = ids ? (const int32_t *)  ids->data : nullptr;
     float         *  dst_d =       (float         *)  dst->data;
+
+    // top-k IDs can be a narrow view of a full argsort matrix. Pack only the
+    // selected IDs so sample blocks can index their token's expert list.
+    ggml_cuda_pool_alloc<int32_t> packed_ids(ctx.pool());
+    if (ids && ne2 > 1 && ids->nb[1] != size_t(ne1) * sizeof(int32_t)) {
+        packed_ids.alloc(ne1 * ne2);
+        CUDA_CHECK(cudaMemcpy2DAsync(packed_ids.get(), ne1 * sizeof(int32_t),
+            ids->data, ids->nb[1], ne1 * sizeof(int32_t), ne2, cudaMemcpyDeviceToDevice, stream));
+        ids_d = packed_ids.get();
+    }
 
     // If src0 is a temporary compute buffer, clear any potential padding.
     if (ggml_backend_buffer_get_usage(src0->buffer) == GGML_BACKEND_BUFFER_USAGE_COMPUTE) {
@@ -540,19 +552,22 @@ void ggml_cuda_mul_mat_vec_q(
     const int64_t s13 = ne12*s12;
 
     // For MUL_MAT_ID the memory layout is different than for MUL_MAT:
-    const int64_t ncols_dst          = ids ? ne2  : ne1;
+    const int64_t ncols_dst          = ids ? 1    : ne1;
     const int64_t nchannels_y        = ids ? ne11 : ne12;
     const int64_t nchannels_dst      = ids ? ne1  : ne2;
     const int64_t stride_col_dst     = ids ? s2   : s1;
     const int64_t stride_col_y       = ids ? s12  : s11;
     const int64_t stride_channel_dst = ids ? s1   : s2;
     const int64_t stride_channel_y   = ids ? s11  : s12;
+    const int64_t samples_dst        = ids ? ne2  : ne3;
+    const int64_t stride_sample_y    = ids ? s12  : s13;
+    const int64_t stride_sample_dst  = ids ? s2   : s3;
 
     mul_mat_vec_q_switch_type(
         src0->data, src0->type, src1_q8_1.get(), ids_d, dst_d, ne00,
         ne01,              ncols_dst,     s01, stride_col_y,     stride_col_dst,
         ne02, nchannels_y, nchannels_dst, s02, stride_channel_y, stride_channel_dst,
-        ne03,              ne3,           s03, s13,              s3,                 stream);
+        ne03,              samples_dst,   s03, stride_sample_y,  stride_sample_dst,  stream);
 }
 
 void ggml_cuda_op_mul_mat_vec_q(

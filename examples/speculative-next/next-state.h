@@ -28,6 +28,16 @@ inline void disable_graphs() {
 #endif
 }
 
+inline void enable_q8_cuda_ar_compatibility() {
+    // Quantized CUDA batch projections otherwise use a different activation
+    // arithmetic from serial AR. Keep this policy local to the hybrid tools.
+#ifdef _WIN32
+    _putenv_s("GGML_CUDA_Q8_AR_COMPAT", "1");
+#else
+    setenv("GGML_CUDA_Q8_AR_COMPAT", "1", 1);
+#endif
+}
+
 inline void decode(llama_context * ctx, const std::vector<llama_token> & tokens,
                    llama_pos first, bool all_logits = false) {
     require(!tokens.empty(), "cannot decode an empty batch");

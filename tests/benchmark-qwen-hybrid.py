@@ -138,6 +138,7 @@ def main():
         )
         valid = (tokens == reference and len(tokens) == args.tokens and not timing["audit"]
                  and timing["quiet"] and timing["decode_tokens"] == args.tokens - 1
+                 and not timing.get("logits_traced", False) and timing.get("batch_probe_at", -1) < 0
                  and 0 <= phases <= timing["generation_ms"] + 0.1)
         case.update({"timing": timing, "tokens": tokens, "valid": valid,
                      "decode_tokens_per_second": timing["decode_tokens"] * 1000 / timing["generation_ms"],

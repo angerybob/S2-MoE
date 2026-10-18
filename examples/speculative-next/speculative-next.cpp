@@ -14,7 +14,8 @@
 struct options {
     std::string model, prompt = "The capital of France is", hot, tokens_file, timings_file, benchmark_plan;
     int predict = 32, draft = 8, experts = 2, gpu_layers = 99, context = 512, ubatch = 32, threads = 8;
-    bool ssd = false, ar = false, audit = false, ignore_eos = false, quiet = false;
+    int probe_batch2_at = -1;
+    bool ssd = false, ar = false, audit = false, ignore_eos = false, quiet = false, trace_logits = false;
 };
 
 // Opt-in wall-clock profiling. Synchronization at phase boundaries includes
@@ -48,6 +49,8 @@ static void usage(const char * exe) {
         "       [--audit-state-copies] [--ar] [--tokens-file file] [--ignore-eos] [-t 8]\n"
         "       [--timings-file file] [--quiet]\n"
         "       [--benchmark-plan file] (reuse model, fresh contexts for each case)\n"
+        "       [--trace-logits] (diagnostic target top-two logits; affects timings)\n"
+        "       [--probe-batch2-at output-index] (AR-only diagnostic; affects timings)\n"
         "One request/branch, shared hybrid memory, raw prompt, greedy sampling only.\n"
         "All recurrent/full-attention layers and shared experts remain active.\n"
 #ifdef LLAMA_EXPERIMENTAL_QWEN35
@@ -86,6 +89,8 @@ static options parse(int argc, char ** argv) {
         else if (arg == "--timings-file") o.timings_file = value();
         else if (arg == "--benchmark-plan") o.benchmark_plan = value();
         else if (arg == "--quiet") o.quiet = true;
+        else if (arg == "--trace-logits") o.trace_logits = true;
+        else if (arg == "--probe-batch2-at") o.probe_batch2_at = integer();
         else if (arg == "--ssd-moe") o.ssd = true;
         else if (arg == "--ar") o.ar = true;
         else if (arg == "--audit-state-copies") o.audit = true;
@@ -132,6 +137,19 @@ static int generate(const options & o, llama_model * model, double model_load_ms
                            "history reservation failed");
     }
     const auto * vocab = llama_model_get_vocab(model);
+    const auto target_greedy = [&](int index = -1) {
+        const llama_token selected = next_spec::greedy(target.get(), index);
+        if (o.trace_logits) {
+            const float * logits = llama_get_logits_ith(target.get(), index);
+            llama_token runner_up = selected == 0 ? 1 : 0;
+            for (llama_token token = 0; token < llama_vocab_n_tokens(vocab); ++token) {
+                if (token != selected && logits[token] > logits[runner_up]) runner_up = token;
+            }
+            std::fprintf(stderr, "NEXT_SPEC_LOGIT_TOP {\"selected\":%d,\"runner_up\":%d,\"score\":%.9g,\"runner_score\":%.9g,\"margin\":%.9g,\"row\":%d}\n",
+                selected, runner_up, logits[selected], logits[runner_up], logits[selected] - logits[runner_up], index);
+        }
+        return selected;
+    };
     std::vector<llama_token> prompt(o.prompt.size() + 16);
     int count = llama_tokenize(vocab, o.prompt.c_str(), o.prompt.size(), prompt.data(), prompt.size(), true, true);
     if (count < 0) {
@@ -171,13 +189,38 @@ static int generate(const options & o, llama_model * model, double model_load_ms
     llama_token root;
     {
         phase_timer timer(profile, sampling_ms);
-        root = next_spec::greedy(target.get());
+        root = target_greedy();
     }
     int zero_rounds = 0, partial_rounds = 0, full_rounds = 0;
     bool stopped = false;
     while (int(emitted.size()) < o.predict && emit(root)) {
         if (int(emitted.size()) == o.predict) break;
         if (o.ar) {
+            if (o.probe_batch2_at == int(emitted.size())) {
+                next_spec::require(o.ubatch >= 2, "batch probe requires ubatch >= 2");
+                const next_spec::snapshot saved(target.get());
+                next_spec::decode(target.get(), {root}, pos, true);
+                const llama_token single_token = next_spec::greedy(target.get(), 0);
+                const int n_vocab = llama_vocab_n_tokens(vocab);
+                const float * one = llama_get_logits_ith(target.get(), 0);
+                const std::vector<float> single(one, one + n_vocab);
+                saved.restore(target.get());
+                next_spec::decode(target.get(), {root, single_token}, pos, true);
+                const llama_token batch_token = next_spec::greedy(target.get(), 0);
+                const float * two = llama_get_logits_ith(target.get(), 0);
+                double squared = 0;
+                float max_abs = 0;
+                for (int i = 0; i < n_vocab; ++i) {
+                    const double delta = double(single[i]) - two[i];
+                    squared += delta * delta;
+                    max_abs = std::max(max_abs, float(std::abs(delta)));
+                }
+                std::fprintf(stderr, "NEXT_SPEC_BATCH_PROBE {\"output_index\":%d,\"single_token\":%d,\"batch_token\":%d,\"single_chosen_score\":%.9g,\"single_other_score\":%.9g,\"batch_chosen_score\":%.9g,\"batch_other_score\":%.9g,\"max_abs\":%.9g,\"rms\":%.9g}\n",
+                    o.probe_batch2_at, single_token, batch_token,
+                    single[single_token], single[batch_token], two[batch_token], two[single_token],
+                    max_abs, std::sqrt(squared / n_vocab));
+                saved.restore(target.get());
+            }
             {
                 phase_timer timer(profile, ar_decode_ms);
                 next_spec::decode(target.get(), {root}, pos++);
@@ -185,7 +228,7 @@ static int generate(const options & o, llama_model * model, double model_load_ms
             }
             {
                 phase_timer timer(profile, sampling_ms);
-                root = next_spec::greedy(target.get());
+                root = target_greedy();
             }
             continue;
         }
@@ -220,11 +263,11 @@ static int generate(const options & o, llama_model * model, double model_load_ms
         int accepted = 0;
         {
             phase_timer timer(profile, sampling_ms);
-            root = next_spec::greedy(target.get(), 0);
+            root = target_greedy(0);
             while (accepted < budget && verification[accepted + 1] == root) {
                 if (!emit(root)) { stopped = true; break; }
                 ++accepted;
-                root = next_spec::greedy(target.get(), accepted);
+                root = target_greedy(accepted);
             }
         }
         {
@@ -253,6 +296,9 @@ static int generate(const options & o, llama_model * model, double model_load_ms
             << ", \"audit\": " << (o.audit ? "true" : "false")
             << ", \"quiet\": " << (o.quiet ? "true" : "false")
             << ", \"resident_model\": " << (o.benchmark_plan.empty() ? "false" : "true")
+            << ", \"logits_traced\": " << (o.trace_logits ? "true" : "false")
+            << ", \"batch_probe_at\": " << o.probe_batch2_at
+            << ", \"cuda_q8_ar_compat\": " << (o.gpu_layers > 0 ? "true" : "false")
             << ", \"model_load_ms\": " << model_load_ms
             << ",\n  \"generated\": " << emitted.size()
             << ", \"decode_tokens\": " << (emitted.empty() ? 0 : emitted.size() - 1)
@@ -286,6 +332,7 @@ static int run(const options & o) {
     next_spec::require(!o.ssd && o.hot.empty(), "Qwen3.5 SSD expert loading is not yet qualified");
 #endif
     next_spec::disable_graphs();
+    next_spec::enable_q8_cuda_ar_compatibility();
     llama_backend_init();
     ggml_backend_load_all();
     auto mp = llama_model_default_params();

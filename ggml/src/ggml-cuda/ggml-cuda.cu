@@ -2890,6 +2890,14 @@ static void ggml_cuda_mul_mat_batched_cublas(ggml_backend_cuda_context & ctx, co
     }
 }
 
+static bool ggml_cuda_q8_ar_compat() {
+    static const bool enabled = [] {
+        const char * value = std::getenv("GGML_CUDA_Q8_AR_COMPAT");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
 static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
     // src0 may be a stack slice (MoE SSD/ghost) with real data but no backing weight buffer
     const bool split = src0->buffer != nullptr && ggml_backend_buft_is_cuda_split(src0->buffer->buft);
@@ -2954,6 +2962,26 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
     if (force_mmq) {
         use_mul_mat_vec_q = false;
         use_mul_mat_q = true;
+    }
+
+    if (ggml_cuda_q8_ar_compat() && !split && !force_mmq && !bad_padding_clear && src0->type == GGML_TYPE_Q8_0 &&
+            dst->op_params[0] == GGML_PREC_F32 && src1->type == GGML_TYPE_F32 &&
+            src0->buffer && ggml_backend_buffer_get_usage(src0->buffer) == GGML_BACKEND_BUFFER_USAGE_WEIGHTS &&
+            src0->ne[2] == 1 && src0->ne[3] == 1 && src1->ne[2] == 1 && src1->ne[3] == 1 &&
+            dst->ne[2] == 1 && dst->ne[3] == 1 && src1->ne[1] > 1 &&
+            ggml_is_contiguous(src1) && ggml_is_contiguous(dst)) {
+        // Keep the single-vector Q8 reduction geometry for explicit F32
+        // requests. Tokens become independent broadcast channels, so one
+        // batched launch retains serial arithmetic without a per-token loop.
+        ggml_tensor vectors = *src1;
+        ggml_tensor results = *dst;
+        vectors.ne[2] = vectors.ne[1];
+        results.ne[2] = results.ne[1];
+        vectors.ne[1] = results.ne[1] = 1;
+        vectors.nb[2] = src1->nb[1];
+        results.nb[2] = dst->nb[1];
+        ggml_cuda_mul_mat_vec_q(ctx, src0, &vectors, nullptr, &results);
+        return;
     }
 
     // debug helpers
@@ -3048,6 +3076,13 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
     // --- INSERT END ---
 
     if (!is_ssd_tensor && src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32) {
+        if (ggml_cuda_q8_ar_compat() && src0->type == GGML_TYPE_Q8_0 && dst->op_params[0] == GGML_PREC_F32 && ne2 > 1 &&
+                ne3 == 1 && ne13 == 1 && ids->ne[2] == 1 && ids->ne[3] == 1) {
+            // Explicit F32 hybrid verification retains the serial Q8 expert
+            // arithmetic, with tokens mapped to independent sample blocks.
+            ggml_cuda_mul_mat_vec_q(ctx, src0, src1, ids, dst);
+            return;
+        }
         if (ne2 == 1) {
             if (ggml_is_quantized(src0->type)) {
                 ggml_cuda_mul_mat_vec_q(ctx, src0, src1, ids, dst);

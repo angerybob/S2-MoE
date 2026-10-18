@@ -8,6 +8,14 @@ add_executable(test-qwen35-expert-draft test-qwen35-expert-draft.cpp)
 target_link_libraries(test-qwen35-expert-draft PRIVATE llama)
 target_compile_features(test-qwen35-expert-draft PRIVATE cxx_std_17)
 
+if (GGML_CUDA)
+    add_executable(test-cuda-moe-batch test-cuda-moe-batch.cpp)
+    target_link_libraries(test-cuda-moe-batch PRIVATE ggml)
+    target_compile_features(test-cuda-moe-batch PRIVATE cxx_std_17)
+    add_test(NAME qwen35-cuda-moe-batch COMMAND test-cuda-moe-batch)
+    set_tests_properties(qwen35-cuda-moe-batch PROPERTIES SKIP_RETURN_CODE 77)
+endif()
+
 # Experimental Qwen3-Next tests use deterministic random weights, not downloads.
 if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
 add_executable(test-qwen3next-state test-qwen3next-state.cpp)
