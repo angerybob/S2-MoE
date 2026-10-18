@@ -589,10 +589,14 @@ static int run(const options & o) {
         next_spec::require(bool(row >> mode >> item.draft >> item.experts
             >> std::quoted(item.tokens_file) >> std::quoted(item.timings_file)), "invalid benchmark row");
         if (row >> std::quoted(prompt)) item.prompt = prompt;
-        next_spec::require(!(row >> extra) && (mode == "AR" || mode == "SPEC")
+        next_spec::require(!(row >> extra) && (mode == "AR" || mode == "SPEC" || mode == "REUSE")
             && item.draft >= 0 && item.draft <= 31 && item.draft + 1 <= item.ubatch
             && item.experts > 0 && !item.tokens_file.empty() && !item.timings_file.empty(), "invalid benchmark case");
         item.ar = mode == "AR";
+        if (mode == "REUSE") {
+            next_spec::require(item.reuse_cap > 0, "REUSE benchmark cases require --moe-reuse-expert-cap");
+            item.reuse_runtime = true;
+        }
         std::fprintf(stderr, "NEXT_SPEC_CASE_BEGIN index=%zu mode=%s depth=%d experts=%d\n",
             index, mode.c_str(), item.draft, item.experts);
         const int result = generate(item, model.get(), model_load_ms);
