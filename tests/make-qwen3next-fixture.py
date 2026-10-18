@@ -56,7 +56,8 @@ def main():
     def tensor(name, shape, constant=None):
         value = rng.normal(0, 0.08, shape).astype(np.float32) if constant is None else np.full(shape, constant, np.float32)
         if len(shape) >= 2 and "ssm_conv1d" not in name and weight_type != "f32":
-            dtype = {"f16": gguf.GGMLQuantizationType.F16, "bf16": gguf.GGMLQuantizationType.BF16}[weight_type]
+            dtype = {"f16": gguf.GGMLQuantizationType.F16, "bf16": gguf.GGMLQuantizationType.BF16,
+                     "q8_0": gguf.GGMLQuantizationType.Q8_0}[weight_type]
             writer.add_tensor(name, gguf.quantize(value, dtype), raw_dtype=dtype)
         else:
             writer.add_tensor(name, value)

@@ -22,6 +22,10 @@ add_executable(test-qwen3next-state test-qwen3next-state.cpp)
 target_link_libraries(test-qwen3next-state PRIVATE llama)
 target_include_directories(test-qwen3next-state PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_features(test-qwen3next-state PRIVATE cxx_std_17)
+add_executable(test-hybrid-placement test-hybrid-placement.cpp)
+target_link_libraries(test-hybrid-placement PRIVATE llama)
+target_include_directories(test-hybrid-placement PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_features(test-hybrid-placement PRIVATE cxx_std_17)
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if (Python3_Interpreter_FOUND AND LLAMA_BUILD_EXAMPLES)
     execute_process(COMMAND ${Python3_EXECUTABLE} -c "import numpy"
@@ -33,10 +37,11 @@ if (Python3_Interpreter_FOUND AND LLAMA_BUILD_EXAMPLES)
                      ${CMAKE_CURRENT_SOURCE_DIR}/make-qwen3next-fixture.py ${NEXT_FIXTURE} ${NEXT_TYPE})
             set_tests_properties(qwen3next-fixture-${NEXT_TYPE} PROPERTIES FIXTURES_SETUP qwen3next-${NEXT_TYPE})
             add_test(NAME qwen3next-state-${NEXT_TYPE} COMMAND test-qwen3next-state ${NEXT_FIXTURE} 0)
+            add_test(NAME qwen3next-placement-${NEXT_TYPE} COMMAND test-hybrid-placement ${NEXT_FIXTURE})
             add_test(NAME qwen3next-equivalence-${NEXT_TYPE} COMMAND ${Python3_EXECUTABLE}
                      ${CMAKE_CURRENT_SOURCE_DIR}/test-qwen3next-equivalence.py
                      $<TARGET_FILE:llama-speculative-next> ${NEXT_FIXTURE} 0)
-            set_tests_properties(qwen3next-state-${NEXT_TYPE} qwen3next-equivalence-${NEXT_TYPE}
+            set_tests_properties(qwen3next-state-${NEXT_TYPE} qwen3next-equivalence-${NEXT_TYPE} qwen3next-placement-${NEXT_TYPE}
                                  PROPERTIES FIXTURES_REQUIRED qwen3next-${NEXT_TYPE})
         endforeach()
     endif()
@@ -51,10 +56,11 @@ if (TARGET test-qwen3next-state AND Python3_Interpreter_FOUND AND LLAMA_BUILD_EX
                  ${CMAKE_CURRENT_SOURCE_DIR}/make-qwen3next-fixture.py ${QWEN35_FIXTURE} ${QWEN35_TYPE} qwen35moe)
         set_tests_properties(qwen35-fixture-${QWEN35_TYPE} PROPERTIES FIXTURES_SETUP qwen35-${QWEN35_TYPE})
         add_test(NAME qwen35-state-${QWEN35_TYPE} COMMAND test-qwen3next-state ${QWEN35_FIXTURE} 0)
+        add_test(NAME qwen35-placement-${QWEN35_TYPE} COMMAND test-hybrid-placement ${QWEN35_FIXTURE})
         add_test(NAME qwen35-equivalence-${QWEN35_TYPE} COMMAND ${Python3_EXECUTABLE}
                  ${CMAKE_CURRENT_SOURCE_DIR}/test-qwen3next-equivalence.py
                  $<TARGET_FILE:llama-speculative-qwen35> ${QWEN35_FIXTURE} 0)
-        set_tests_properties(qwen35-state-${QWEN35_TYPE} qwen35-equivalence-${QWEN35_TYPE}
+        set_tests_properties(qwen35-state-${QWEN35_TYPE} qwen35-equivalence-${QWEN35_TYPE} qwen35-placement-${QWEN35_TYPE}
                              PROPERTIES FIXTURES_REQUIRED qwen35-${QWEN35_TYPE})
     endforeach()
     add_test(NAME qwen35-expert-draft COMMAND test-qwen35-expert-draft

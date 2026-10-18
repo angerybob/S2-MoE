@@ -6658,14 +6658,17 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                 char name_buf[256];
                                 snprintf(name_buf, sizeof(name_buf),
                                          "blk.%d.ffn_%s.%03d.weight", i, split_kind, expert);
-                                if (ggml_tensor * meta = ml.get_tensor_meta(name_buf)) {
-                                    ghost_type = meta->type;
+                                const auto * meta = ml.check_tensor_dims(name_buf, {ne0, ne1}, true);
+                                if (expert && meta->type != ghost_type) {
+                                    throw std::runtime_error("mixed types within SSD expert projection");
                                 }
+                                ghost_type = meta->type;
                                 create_tensor_str(name_buf, {ne0, ne1}, i);
                             }
 
+                            auto * buft_list = pimpl->dev_layer.at(i).buft_list;
                             ggml_tensor * ghost = ggml_new_tensor_3d(
-                                pimpl->ctxs[0].get(), ghost_type, ne0, ne1, n_expert);
+                                ctx_for_buft(buft_list->front().second), ghost_type, ne0, ne1, n_expert);
                             ggml_set_name(ghost, tn(tensor_kind, "weight", i).str().c_str());
                             ghost->data = (void *) 1;
                             if (layer.ffn_gate_inp && layer.ffn_gate_inp->buffer) {
@@ -21479,6 +21482,7 @@ llama_model_params llama_model_default_params() {
         /*.check_tensors               =*/ false,
         /*.use_extra_bufts             =*/ true,
         /*.hot_experts_path             =*/ nullptr,
+        /*.ssd_weight_budget            =*/ 0,
     };
 
     return result;

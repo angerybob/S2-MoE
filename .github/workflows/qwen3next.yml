@@ -25,6 +25,6 @@ jobs:
         run: |
           cmake -S . -B build-next -DGGML_CUDA=OFF -DLLAMA_BUILD_TESTS=ON \
             -DLLAMA_BUILD_SERVER=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
-          cmake --build build-next --target llama-speculative-next test-qwen3next-state -j2
+          cmake --build build-next --target llama-speculative-next test-qwen3next-state test-hybrid-placement -j2
       - name: Compare verification-prefix states and greedy output against AR
         run: ctest --test-dir build-next -R qwen3next --output-on-failure

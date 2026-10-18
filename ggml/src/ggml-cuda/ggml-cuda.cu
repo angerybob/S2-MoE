@@ -156,6 +156,10 @@ static void llama_ssd_profile_add_read_by_mode(int mode, uint64_t bytes, uint64_
 static size_t MAX_EXPERT_SIZE = 16 * 1024 * 1024; // 64MB
 
 extern "C" {
+    void llama_ssd_backend_profile_set_phase(int phase) {
+        GGML_ASSERT(phase >= 0 && phase <= 2);
+        g_ssd_profile_mode.store(phase, std::memory_order_relaxed);
+    }
     // 清除缓存 (每轮 Speculation 结束调用)
     void llama_ssd_clear_cache() {
         std::lock_guard<std::mutex> lock(g_cache_mutex);
@@ -3169,7 +3173,11 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
     const size_t MAX_EXPERT_SIZE = 64 * 1024 * 1024; 
     static void* ssd_staging_buffer = nullptr;
     if (!ssd_staging_buffer) {
-        CUDA_CHECK(cudaMallocHost(&ssd_staging_buffer, MAX_EXPERT_SIZE)); 
+        // Additional head/tail padding permits aligned O_DIRECT reads from a
+        // packed GGUF whose expert offsets need not be page aligned.
+        void * raw = nullptr;
+        CUDA_CHECK(cudaMallocHost(&raw, MAX_EXPERT_SIZE + 8192));
+        ssd_staging_buffer = (void *) ((reinterpret_cast<uintptr_t>(raw) + 4095) & ~uintptr_t(4095));
     }
 
     // --- 修改的是这个循环 ---
@@ -3227,13 +3235,25 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
                     fprintf(stderr, "[FATAL] Expert size %zu invalid (max %zu)\n", size, MAX_EXPERT_SIZE);
                     exit(1);
                 }
-                int fd = open(fname, O_RDONLY);
-                if (fd > 0) {
+                const bool direct = getenv("S2MOE_SSD_DIRECT") && atoi(getenv("S2MOE_SSD_DIRECT")) != 0;
+                int flags = O_RDONLY;
+#ifdef O_DIRECT
+                if (direct) flags |= O_DIRECT;
+#else
+                GGML_ASSERT(!direct && "direct SSD I/O is unavailable on this platform");
+#endif
+                int fd = open(fname, flags);
+                if (fd >= 0) {
                     auto ssd_read_t0 = std::chrono::steady_clock::now();
-                    ssize_t ret = pread(fd, ssd_staging_buffer, size, offset);
+                    const size_t head = direct ? offset % 4096 : 0;
+                    const size_t requested = direct ? (head + size + 4095) & ~size_t(4095) : size;
+                    ssize_t ret;
+                    do {
+                        ret = pread(fd, ssd_staging_buffer, requested, offset - head);
+                    } while (ret < 0 && errno == EINTR);
                     auto ssd_read_t1 = std::chrono::steady_clock::now();
                     close(fd);
-                    if (ret == (ssize_t) size) {
+                    if (ret >= (ssize_t) (head + size)) {
                         const uint64_t read_us = (uint64_t) std::chrono::duration_cast<std::chrono::microseconds>(ssd_read_t1 - ssd_read_t0).count();
                         g_ssd_profile_ssd_misses.fetch_add(1, std::memory_order_relaxed);
                         g_ssd_profile_read_requests.fetch_add(1, std::memory_order_relaxed);
@@ -3243,12 +3263,12 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
                             g_ssd_profile_mode.load(std::memory_order_relaxed),
                             (uint64_t) size,
                             read_us);
-                        host_source_ptr = ssd_staging_buffer;
+                        host_source_ptr = (char *) ssd_staging_buffer + head;
                     } else {
-                        fprintf(stderr, "[ERROR] SSD Read size mismatch! Expert %d\n", (int)i02);
+                        GGML_ABORT("SSD expert read failed: %s expert %d offset %zu size %zu result %zd", fname, (int)i02, offset, size, ret);
                     }
                 } else {
-                    fprintf(stderr, "[ERROR] Failed to open file: %s\n", fname);
+                    GGML_ABORT("cannot open SSD expert file %s: %s", fname, strerror(errno));
                 }
             }
         } else if (src0->data != nullptr && src0->data != (void*)1) {
@@ -3258,8 +3278,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
         if (host_source_ptr == nullptr) {
             // 如果既不在 SSD 表里，src0->data 又是空（或者读取失败），那就真的没法算了
             // 打印个错误防止静默失败
-            fprintf(stderr, "[ERROR] Missing data for expert %d tensor %s\n", (int)i02, src0->name);
-            continue; 
+            GGML_ABORT("missing SSD expert %d tensor %s", (int)i02, src0->name);
         }
         // const bool debug_expert0 = (debug_call && i02 == debug_expert_idx);
         // if (debug_expert0) {
@@ -3434,8 +3453,10 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
             }
 #endif
             if (!is_device_ptr) {
-                expert_dev_buf.alloc(ctx.pool(), size);
+                const size_t allocation = ggml_backend_buft_get_alloc_size(ggml_backend_cuda_buffer_type(ctx.device), &src0_slice);
+                expert_dev_buf.alloc(ctx.pool(), allocation);
                 CUDA_CHECK(cudaMemcpyAsync(expert_dev_buf.ptr, host_source_ptr, size, cudaMemcpyHostToDevice, stream));
+                if (allocation > size) CUDA_CHECK(cudaMemsetAsync(expert_dev_buf.ptr + size, 0, allocation - size, stream));
                 current_expert_dev = expert_dev_buf.ptr;
                 // ensure temp device buffer remains valid until kernel completes
                 need_sync = true;
@@ -3486,7 +3507,23 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
         dst_slice.data   = dst_data_cur;
         dst_slice.op_params[0] = dst->op_params[0];
 
-        ggml_cuda_mul_mat(ctx, &src0_slice, &src1_slice, &dst_slice);
+        if (is_ssd_mode && src0->type == GGML_TYPE_Q8_0 && ggml_cuda_q8_ar_compat() &&
+                dst->op_params[0] == GGML_PREC_F32) {
+            // A cold expert lives in a temporary pool allocation, outside the
+            // ghost's borrowed model buffer. Generic dispatch consequently
+            // forces MMQ (and its padding requirements), unlike resident AR.
+            // Use the same single-vector Q8 geometry for every sorted token.
+            ggml_tensor vectors = src1_slice;
+            ggml_tensor results = dst_slice;
+            vectors.ne[2] = vectors.ne[1];
+            results.ne[2] = results.ne[1];
+            vectors.ne[1] = results.ne[1] = 1;
+            vectors.nb[2] = src1_slice.nb[1];
+            results.nb[2] = dst_slice.nb[1];
+            ggml_cuda_mul_mat_vec_q(ctx, &src0_slice, &vectors, nullptr, &results);
+        } else {
+            ggml_cuda_mul_mat(ctx, &src0_slice, &src1_slice, &dst_slice);
+        }
 
         if (getenv("GGML_MOE_EXPERT_BREAK") != nullptr && type_dst_sorted == GGML_TYPE_F32) {
             float h_out[8] = {0};

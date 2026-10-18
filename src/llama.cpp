@@ -160,6 +160,7 @@ static int llama_model_load(const std::string & fname, std::vector<std::string> 
 
     try {
         llama_model_loader ml(fname, splits, params.use_mmap, params.check_tensors, params.use_ssd_moe ,params.kv_overrides, params.tensor_buft_overrides,params.hot_experts_path);
+        ml.configure_ssd_budget(params.ssd_weight_budget, params.hot_experts_path != nullptr);
 
         ml.print_info();
 
@@ -1400,6 +1401,7 @@ llama_token llama_dflash_domino_sample_gpu(
 // 声明 ggml-cuda.cu 里的函数
 extern "C" void llama_ssd_clear_cache(); 
 extern "C" void llama_ssd_backend_profile_reset();
+extern "C" void llama_ssd_backend_profile_set_phase(int phase);
 extern "C" void llama_ssd_backend_profile_snapshot(struct llama_ssd_profile * profile);
 
 // 导出给用户的 API
@@ -1414,6 +1416,14 @@ void llama_clear_ssd_cache_backend() {
 void llama_ssd_profile_reset(void) {
 #ifdef GGML_USE_CUDA
     llama_ssd_backend_profile_reset();
+#endif
+}
+
+void llama_ssd_profile_set_phase(int phase) {
+#ifdef GGML_USE_CUDA
+    llama_ssd_backend_profile_set_phase(phase);
+#else
+    GGML_UNUSED(phase);
 #endif
 }
 

@@ -2497,7 +2497,20 @@ std::map<ggml_backend_buffer_type_t, llama_memory_breakdown_data> llama_context:
         ggml_backend_t backend = backend_ptr.get();
         ret[ggml_backend_sched_get_buffer_type(sched.get(), backend)].compute += ggml_backend_sched_get_buffer_size(sched.get(), backend);
     }
+    if (buf_output) {
+        ret[ggml_backend_buffer_get_type(buf_output.get())].compute += ggml_backend_buffer_get_size(buf_output.get());
+    }
     return ret;
+}
+
+llama_buffer_usage llama_get_buffer_usage(const llama_context * ctx) {
+    llama_buffer_usage usage = {};
+    for (const auto & item : ctx->memory_breakdown()) {
+        usage.model_bytes += item.second.model;
+        usage.state_bytes += item.second.context;
+        usage.compute_bytes += item.second.compute;
+    }
+    return usage;
 }
 
 //

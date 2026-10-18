@@ -3,6 +3,7 @@
 #include "sampling.h"
 #include "log.h"
 #include "llama.h"
+#include "gguf.h"
 #include "prune_routing_noise.h"
 
 #include <algorithm>
@@ -1827,7 +1828,30 @@ static void draft_tree_prune(
     }
 }
 
+int llama_hybrid_main(int argc, char ** argv);
+
+static bool is_hybrid_gguf(int argc, char ** argv) {
+    const char * path = nullptr;
+    for (int i = 1; i + 1 < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "-m" || arg == "--model") path = argv[++i];
+        else if (arg == "-p" || arg == "--prompt" || arg == "--model-draft") ++i;
+    }
+    if (!path) return false;
+    gguf_context * metadata = gguf_init_from_file(path, {true, nullptr});
+    if (!metadata) return false;
+    const int key = gguf_find_key(metadata, "general.architecture");
+    bool hybrid = false;
+    if (key >= 0 && gguf_get_kv_type(metadata, key) == GGUF_TYPE_STRING) {
+        const std::string arch = gguf_get_val_str(metadata, key);
+        hybrid = arch == "qwen3next" || arch == "qwen35moe";
+    }
+    gguf_free(metadata);
+    return hybrid;
+}
+
 int main(int argc, char ** argv) {
+    if (is_hybrid_gguf(argc, argv)) return llama_hybrid_main(argc, argv);
     common_params params;
 
     // needed to get candidate probs even for temp <= 0.0

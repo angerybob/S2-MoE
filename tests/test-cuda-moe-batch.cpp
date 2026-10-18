@@ -12,6 +12,25 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#ifndef _WIN32
+#include <unistd.h>
+extern "C" void ggml_cuda_register_ssd_expert(const char *, const char *, size_t, size_t, void *);
+struct temporary_weights {
+    char path[64] = "/tmp/s2moe-ssd-XXXXXX";
+    explicit temporary_weights(const std::vector<uint8_t> & bytes) {
+        const int fd = mkstemp(path);
+        if (fd < 0) throw std::runtime_error("SSD test file creation failed");
+        size_t done = 0;
+        while (done < bytes.size()) {
+            const auto n = write(fd, bytes.data() + done, bytes.size() - done);
+            if (n <= 0) { close(fd); unlink(path); throw std::runtime_error("SSD test file write failed"); }
+            done += n;
+        }
+        close(fd);
+    }
+    ~temporary_weights() { unlink(path); }
+};
+#endif
 
 using context_ptr = std::unique_ptr<ggml_context, decltype(&ggml_free)>;
 using buffer_ptr = std::unique_ptr<ggml_backend_buffer, decltype(&ggml_backend_buffer_free)>;
@@ -57,6 +76,7 @@ int main() {
         _putenv_s("GGML_CUDA_Q8_AR_COMPAT", "1");
 #else
         setenv("GGML_CUDA_Q8_AR_COMPAT", "1", 1);
+        setenv("S2MOE_SSD_DIRECT", "1", 1);
 #endif
         ggml_backend_load_all();
         auto * device = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
@@ -112,6 +132,39 @@ int main() {
                 }
             }
         }
+#ifndef _WIN32
+        // A partially resident ghost tensor must reproduce the resident serial
+        // oracle, including cold pool allocations and strided top-k ID views.
+        temporary_weights file(quantized);
+        ggml_tensor ghost = *weights;
+        ggml_set_name(&ghost, "blk.987.ffn_up_exps.weight");
+        ghost.data = (void *) 1;
+        for (int e = 0; e < count; ++e) {
+            const auto name = std::string("blk.987.ffn_up.") + (e < 10 ? "00" : "0") + std::to_string(e) + ".weight";
+            ggml_cuda_register_ssd_expert(name.c_str(), file.path, e * weights->nb[2], weights->nb[2],
+                e % 2 ? nullptr : (char *) weights->data + e * weights->nb[2]);
+        }
+        for (int channels : {1, used}) for (int tokens : {2, 5, 9, 32}) for (int strided : {0, 1}) {
+            std::vector<float> input(width * channels * tokens);
+            std::vector<int32_t> experts(used * tokens);
+            for (size_t i = 0; i < input.size(); ++i) input[i] = std::sin(float(i) * 0.117f) * (0.5f + i % 7);
+            for (int t = 0; t < tokens; ++t) for (int k = 0; k < used; ++k) experts[t * used + k] = (t * 3 + k * 7) % count;
+            const auto batch = project(backend.get(), &ghost, channels, tokens, used, input.data(), experts.data(), strided);
+            std::vector<float> serial;
+            for (int t = 0; t < tokens; ++t) {
+                const auto one = project(backend.get(), weights, channels, 1, used,
+                    input.data() + t * width * channels, experts.data() + t * used, strided);
+                serial.insert(serial.end(), one.begin(), one.end());
+            }
+            float max_abs = 0;
+            for (size_t i = 0; i < batch.size(); ++i) {
+                require(std::isfinite(batch[i]), "non-finite SSD projection");
+                max_abs = std::max(max_abs, std::abs(batch[i] - serial[i]));
+            }
+            std::fprintf(stderr, "Q8 SSD channels=%d tokens=%d strided_ids=%d max_abs=%.9g\n", channels, tokens, strided, max_abs);
+            all_equal = all_equal && max_abs == 0;
+        }
+#endif
         return all_equal ? 0 : 1;
     } catch (const std::exception & error) {
         std::fprintf(stderr, "%s\n", error.what());

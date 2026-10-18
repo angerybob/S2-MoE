@@ -43,6 +43,13 @@ def main():
     parser.add_argument("--context", type=int, default=128)
     parser.add_argument("--ubatch", type=int, default=32)
     parser.add_argument("--gpu-layers", type=int, default=99, help="99: full GPU offload; 0: CPU only")
+    parser.add_argument("--ssd-moe", action="store_true")
+    parser.add_argument("--memory-budget-mib", type=int, default=0)
+    parser.add_argument("--runtime-reserve-mib", type=int, default=2048)
+    parser.add_argument("--hot-experts", type=Path)
+    parser.add_argument("--draft-branches", type=int, default=1)
+    parser.add_argument("--prune", action="store_true")
+    parser.add_argument("--prune-score-thresh", type=float, default=1)
     parser.add_argument("--depths", type=int, nargs="+", default=[1, 4, 8])
     parser.add_argument("--experts", type=int, nargs="+", default=[1, 2, 4])
     parser.add_argument("--repeats", type=int, default=2)
@@ -52,6 +59,19 @@ def main():
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--limit-gib", type=int, default=0, help="CPU-only child address-space cap; 0 disables")
     args = parser.parse_args()
+    placement = []
+    if args.ssd_moe:
+        if args.gpu_layers < 99:
+            parser.error("SSD hybrid execution requires -ngl 99")
+        placement.append("--ssd-moe")
+    if args.memory_budget_mib:
+        placement += ["--memory-budget-mib", str(args.memory_budget_mib),
+                      "--runtime-reserve-mib", str(args.runtime_reserve_mib)]
+    if args.hot_experts:
+        placement += ["--hot-experts", str(args.hot_experts.resolve())]
+    placement += ["--draft-branches", str(args.draft_branches)]
+    if args.prune:
+        placement += ["--prune", "1", "--prune-score-thresh", str(args.prune_score_thresh)]
     if (args.tokens < 2 or args.repeats < 1 or args.threads < 1 or args.timeout < 1
             or args.gpu_layers < 0 or args.limit_gib < 0
             or not all(1 <= d <= 31 and d + 1 <= args.ubatch for d in args.depths)
@@ -108,7 +128,7 @@ def main():
                    "-ngl", str(args.gpu_layers), "-c", str(args.context), "-ub", str(args.ubatch), "-t", str(args.threads),
                    "--ignore-eos", "--quiet", "--timings-file", str(case_dir / "timing.json"),
                    "--tokens-file", str(case_dir / "tokens.json"), "--draft-max", str(depth),
-                   "--draft-expert-topk", str(experts)]
+                   "--draft-expert-topk", str(experts), *placement]
         if depth == 0:
             command.append("--ar")
         sys.stdout.write("START " + label + "\n")
@@ -190,7 +210,7 @@ def main():
         plan.write_text("\n".join(rows) + "\n", encoding="utf-8")
         command = [str(binary), "-m", str(model), "-p", args.prompt, "-n", str(args.tokens),
                    "-ngl", str(args.gpu_layers), "-c", str(args.context), "-ub", str(args.ubatch),
-                   "-t", str(args.threads), "--ignore-eos", "--quiet", "--benchmark-plan", str(plan)]
+                   "-t", str(args.threads), "--ignore-eos", "--quiet", "--benchmark-plan", str(plan), *placement]
         before = resource.getrusage(resource.RUSAGE_CHILDREN)
         start = time.monotonic()
         next_case = 0
