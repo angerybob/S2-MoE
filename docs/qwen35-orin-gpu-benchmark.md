@@ -1,8 +1,12 @@
-# Orin CUDA performance and remaining AR-equivalence limitation
+# Historical Orin CUDA performance before the AR-consistency fix
 
-**The passed main GPU sweep is slower than AR. GPU self-speculation is still
-experimental and not fully qualified: the extra mathematics confirmation
-fails exact AR token equality.** This report promotes actual GPU measurements;
+The failure and timings below describe the pre-fix implementation. The math
+failure is addressed in the [CUDA AR-consistency fix and SSD validation](qwen35-cuda-ar-fix.md).
+The original raw failed report and measurements are retained; these throughput
+numbers are not a post-fix performance benchmark.
+
+**At this historical revision, the passed main GPU sweep is slower than AR
+and the extra mathematics confirmation fails exact AR token equality.** This report promotes actual GPU measurements;
 the earlier [CPU report](qwen35-orin-cpu-benchmark.md) is supplementary.
 
 ## Hardware, placement and method

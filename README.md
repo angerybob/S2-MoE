@@ -44,6 +44,8 @@ adaptive draft trees and optional verification-time expert reuse. Follow the
 GPU execution, exact versus approximate modes, and validation limits. Dedicated
 `llama-speculative-next` / `llama-speculative-qwen35` aliases remain available.
 The paper's speedup claims do not automatically apply to these experimental ports.
+The [Qwen3.5 CUDA consistency report](docs/qwen35-cuda-ar-fix.md) records the
+attention-reduction fix and completed GPU SSD comparisons at 32–64 output tokens.
 
 Use the `orin` branch for Jetson AGX Orin and the `4090` branch for a single RTX 4090.
 

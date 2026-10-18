@@ -1,0 +1,37 @@
+name: Synchronize completed Qwen GPU validation into PR description
+on:
+  push:
+    branches: [feature/qwen35-hybrid-self-spec]
+    paths: ['.github/workflows/qwen-hybrid-pr-update.yml']
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const e = JSON.parse(fs.readFileSync('docs/validation/qwen35-cuda-ar-fix-20261018.json', 'utf8'));
+            if (e.status !== 'passed' || e.coverage.ssd_cases !== 19 ||
+                e.coverage.ssd_speculative_cases !== 12 || e.coverage.ssd_emitted_tokens !== 1024 ||
+                !e.coverage.all_token_ids_match_ar || !e.frozen_math_reference.all_new_math_cases_match_frozen_prefix ||
+                e.regression.cuda_build_ctest_passed !== 35) throw new Error('Incomplete GPU evidence');
+            for (const [name, count] of Object.entries({resident64: 13, ssd24g64: 13, ssd8g32: 4, 'ssd8g-tree32': 2})) {
+              const suite = e.suites[name];
+              if (suite.status !== 'passed' || suite.source_dirty || suite.cases.length !== count ||
+                  suite.planned_cases !== count || suite.source_revision !== e.source_revision ||
+                  suite.cases.some(c => !c.valid || c.tokens.length !== suite.tokens_per_case ||
+                    (c.prompt.id === 'math' && c.matches_frozen_math_ar !== true))) throw new Error('Suite incomplete: ' + name);
+            }
+            const pr = (await github.rest.pulls.get({...context.repo, pull_number: 3})).data;
+            if (pr.state !== 'open' || !pr.draft || pr.head.sha !== context.sha ||
+                pr.head.ref !== 'feature/qwen35-hybrid-self-spec' || pr.base.ref !== 'orin') throw new Error('PR identity/head/state changed');
+            const body = fs.readFileSync('.github/qwen-hybrid-pr-description.md', 'utf8');
+            await github.rest.pulls.update({...context.repo, pull_number: 3, body,
+              title: 'Integrate experimental Qwen3-Next and Qwen3.5-MoE with S2-MoE'});
+            await core.summary.addLink('Updated completed GPU validation in PR #3', pr.html_url).write();

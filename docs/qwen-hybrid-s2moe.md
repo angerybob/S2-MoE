@@ -7,10 +7,10 @@ entering the Transformer decoder. The dedicated `llama-speculative-next` and
 `llama-speculative-qwen35` names remain available and use the same driver.
 
 This is an experimental, one-request, raw-text, greedy implementation. It does
-not qualify every model/precision/backend combination. In particular, the
-[previous fully resident Qwen3.5 CUDA math mismatch](qwen35-orin-gpu-benchmark.md)
-must not be hidden by the new SSD integration. Exact-mode and approximate
-expert-reuse results are reported separately.
+not qualify every model/precision/backend combination. The previously recorded
+Qwen3.5 CUDA math mismatch is addressed by the
+[AR-consistency fix and 32–64-token GPU SSD qualification](qwen35-cuda-ar-fix.md).
+Exact-mode and approximate expert-reuse results remain separate.
 
 See the [recorded Orin GPU validation and timing subset](qwen-hybrid-orin-validation.md)
 for the actual configurations and remaining qualification limits.

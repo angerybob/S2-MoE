@@ -1,5 +1,10 @@
 # Orin GPU validation of the Qwen hybrid S2-MoE integration
 
+Historical integration/timing record at the revisions named below. For current
+Qwen3.5 numerical qualification, see the
+[CUDA AR-consistency fix and completed 32–64-token SSD matrix](qwen35-cuda-ar-fix.md).
+The original failure and interrupted-plan statuses are preserved.
+
 This record qualifies the tested SSD placement, state handling and core S2-MoE
 connections for Next and Qwen3.5. It does not establish universal numerical
 correctness or a general speedup. See [deployment and limitations](qwen-hybrid-s2moe.md).
@@ -118,8 +123,8 @@ These results do not make the inherited repository-wide lint/type/platform
 checks green. No unrelated legacy-script repairs are included.
 
 The previously recorded [fully resident Qwen3.5 CUDA math mismatch](qwen35-orin-gpu-benchmark.md)
-at output index 17 remains an open general-correctness limitation. This change
-does not complete a new long-form CUDA math qualification. PR #3 remains Draft;
-sampling, multiple requests, vision/MTP, layer skipping and flat-tree hybrid
-verification are outside this driver. Approximate expert reuse requires separate
-quality evaluation before release claims.
+at output index 17 was open at this report's revision. It is subsequently
+addressed by the [AR-consistency fix](qwen35-cuda-ar-fix.md), with separate
+completed GPU SSD qualification. Sampling, multiple requests, vision/MTP,
+layer skipping and flat-tree hybrid verification remain outside this driver.
+Approximate expert reuse requires separate quality evaluation before release claims.

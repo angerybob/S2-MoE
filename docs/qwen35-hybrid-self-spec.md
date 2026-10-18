@@ -3,6 +3,11 @@
 Development branch: `feature/qwen35-hybrid-self-spec`, based on merged PR #2.
 This is a separate integration; Qwen3-Next validation does not qualify Qwen3.5.
 
+Current GPU numerical qualification is recorded in the
+[CUDA AR-consistency fix and completed SSD comparisons](qwen35-cuda-ar-fix.md).
+It covers four prompts at 64 tokens plus 8 GiB 32-token and pruned-tree checks;
+the older architecture/performance records below retain their original scope.
+
 The subsequent [hybrid S2-MoE integration](qwen-hybrid-s2moe.md) connects this
 architecture to budgeted GPU SSD loading, resident experts, adaptive draft
 trees/pruning, optional verification-time reuse and the main executable.
@@ -124,8 +129,8 @@ The real Q8_0 CPU self-spec matrix passed as recorded below. SSD/hot-expert
 loading is now connected through the hybrid S2-MoE driver and has separate
 validation. Quantized formats other
 than the recorded Q8_0 model, fused recurrent projections, partial GPU offload,
-general CUDA correctness, MTP, vision, stochastic sampling and multi-request
-speculation remain unqualified. Bounded DFS draft trees use staged path
+CUDA configurations beyond the recorded GPU comparisons, MTP, vision,
+stochastic sampling and multi-request speculation remain unqualified. Bounded DFS draft trees use staged path
 verification, as described in the current deployment guide.
 
 Example (CPU, one greedy chain):
@@ -176,8 +181,8 @@ A separate [Orin CPU real-model smoke test](validation/qwen35-orin-real-smoke-20
 uses the original ggml-org Q8_0 artifact after verifying its published size and
 SHA-256. With 8 output tokens, depth 4/top-k 2, AR and self-spec token IDs match;
 zero/full acceptance and native copy audits pass. This short Orin run does not
-replace the longer 32-token matrix on the x86 CPU host. Full-model CUDA and
-32 GB Orin qualification remain separate work.
+replace the longer 32-token matrix on the x86 CPU host. GPU qualification is
+recorded separately in the [current CUDA/SSD report](qwen35-cuda-ar-fix.md).
 
 The [Qwen3.5 CPU workflow](https://github.com/angerybob/S2-MoE/actions/runs/39051393156)
 passed on the implementation revision. Later report/documentation changes do
@@ -186,14 +191,13 @@ issue #1 and does not close it or claim universal equivalence or acceleration.
 
 ### Orin GPU performance and qualification follow-up
 
-A real Q8_0 CUDA sweep now offloads all 41 layers and measures AR against nine
-speculative configurations, with auditing disabled. The main 64-token matrix
-passes equality for all 22 runs but shows no speedup: AR 14.864 token/s versus
-8.597 token/s for the fastest tested configuration. Extra code checks pass;
-an extra math prompt still fails exact AR equality. General GPU qualification
-therefore remains incomplete. See the [GPU matrix, phase costs, numerical fix
-and remaining blocker](qwen35-orin-gpu-benchmark.md). The CPU report below is
-supplementary and does not establish GPU performance.
+The historical pre-fix Q8_0 CUDA sweep offloaded all 41 layers. Its main
+64-token matrix passed all 22 runs but showed no speedup, while the extra math
+prompt exposed the numerical blocker. See the
+[preserved GPU timing/failure record](qwen35-orin-gpu-benchmark.md). The later
+[AR-consistency fix](qwen35-cuda-ar-fix.md) resolves that recorded failure and
+provides separate GPU SSD correctness checks; it does not relabel the old timing
+run as a current benchmark. The CPU report below remains supplementary.
 
 ### Supplementary Orin CPU performance follow-up
 
