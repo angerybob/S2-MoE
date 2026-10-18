@@ -175,3 +175,12 @@ The [Qwen3.5 CPU workflow](https://github.com/angerybob/S2-MoE/actions/runs/3905
 passed on the implementation revision. Later report/documentation changes do
 not change inference behavior. This experimental contribution is related to
 issue #1 and does not close it or claim universal equivalence or acceleration.
+
+### Audit-disabled Orin CPU performance follow-up
+
+A separate 64-token benchmark now compares AR with depth 1/4/8 and expert
+top-k 1/2/4, with auditing and token rendering disabled. On this recorded CPU
+path, all nine speculative configurations are slower than AR: 5.716 token/s
+for AR versus 3.685 token/s for the fastest tested configuration. See the
+[complete matrix, phase timings and reproduction instructions](qwen35-orin-cpu-benchmark.md).
+These CPU measurements do not establish full-model CUDA or SSD performance.
