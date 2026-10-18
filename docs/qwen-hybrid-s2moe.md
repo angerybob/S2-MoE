@@ -12,6 +12,9 @@ not qualify every model/precision/backend combination. In particular, the
 must not be hidden by the new SSD integration. Exact-mode and approximate
 expert-reuse results are reported separately.
 
+See the [recorded Orin GPU validation and timing subset](qwen-hybrid-orin-validation.md)
+for the actual configurations and remaining qualification limits.
+
 ## Placement and memory accounting
 
 All non-routed weights, including recurrent/attention layers, routers, shared

@@ -66,8 +66,10 @@ def main():
     # Inserting a dispatcher moves old diagnostics without introducing an
     # error. Match file/severity/rule/message and preserve multiplicity; retain
     # every original position in the raw baseline/candidate reports for review.
+
     def identity(diagnostic):
         return json.dumps({k: v for k, v in diagnostic.items() if k != "range"}, sort_keys=True)
+
     before = Counter(identity(d) for d in baseline["diagnostics"])
     after = Counter(identity(d) for d in branch["diagnostics"])
     added = [json.loads(d) for d in (after - before).elements()]
