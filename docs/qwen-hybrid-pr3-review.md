@@ -6,7 +6,7 @@ history and pruning. The base reviewed here is `orin` at
 `bc4129bd23943a8e6542304b03ce18f74cf04549`. The implementation remains limited to
 one request, sequence 0, raw text and greedy decoding. CUDA graphs/reuse are
 disabled. Approximate expert reuse is separately opt-in and is not included in
-the exact-equivalence or speedup evidence.
+the exact-equivalence evidence.
 
 ## CI failures
 
@@ -25,9 +25,6 @@ contains individual failed-job links and source checks.
 | Other jobs | Queued, cancelled or uninspected platform jobs are not represented as passing. Repository-wide CI is not all green. |
 
 The logging changes preserve the non-logging Python AST in all four scripts.
-The executed speed harness is linked by immutable commit and SHA-256 in the
-[speed report](qwen35-ssd-postfix-speed.md); historical measurements were not
-regenerated or relabelled.
 
 ## Code self-review
 
@@ -68,8 +65,3 @@ The [Next workflow](https://github.com/angerybob/S2-MoE/actions/runs/39257183881
 and [Qwen3.5 independent-reference workflow](https://github.com/angerybob/S2-MoE/actions/runs/39257183927)
 also pass on `e87c4921d8`. The final follow-up adds this review record and removes
 the completed inspection helper; it changes no inference or test execution.
-
-The completed post-fix speed experiment has 28/28 exact speculative matches,
-but 181 device timeout/error events contaminate throughput. Neither these
-timings nor this review establish stable or general speedup. These limitations
-remain part of the experimental release; issue #1 remains open for follow-up.

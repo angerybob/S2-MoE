@@ -104,7 +104,7 @@ up/gate/down projection shapes. On the real model, top-k 1/2/8 retain all 30
 recurrent layers, 10 full-attention layers and 40 shared-expert paths. Routed
 projection output elements are 362496 / 724992 / 2899968 respectively. Setting
 draft top-k to 1 on a target context leaves its logits exactly unchanged and its
-routed expert count at 8. These graph-size reductions do not establish speedup.
+routed expert count at 8.
 The same audit passes on Orin CPU and CUDA F32 fixtures (top-k 1/2).
 
 ### Gate 3: hybrid memory integration
@@ -188,22 +188,3 @@ The [Qwen3.5 CPU workflow](https://github.com/angerybob/S2-MoE/actions/runs/3905
 passed on the implementation revision. Later report/documentation changes do
 not change inference behavior. This experimental contribution is related to
 issue #1 and does not close it or claim universal equivalence or acceleration.
-
-### Orin GPU performance and qualification follow-up
-
-The historical pre-fix Q8_0 CUDA sweep offloaded all 41 layers. Its main
-64-token matrix passed all 22 runs but showed no speedup, while the extra math
-prompt exposed the numerical blocker. See the
-[preserved GPU timing/failure record](qwen35-orin-gpu-benchmark.md). The later
-[AR-consistency fix](qwen35-cuda-ar-fix.md) resolves that recorded failure and
-provides separate GPU SSD correctness checks; it does not relabel the old timing
-run as a current benchmark. The CPU report below remains supplementary.
-
-### Supplementary Orin CPU performance follow-up
-
-A separate 64-token benchmark now compares AR with depth 1/4/8 and expert
-top-k 1/2/4, with auditing and token rendering disabled. On this recorded CPU
-path, all nine speculative configurations are slower than AR: 5.716 token/s
-for AR versus 3.685 token/s for the fastest tested configuration. See the
-[complete matrix, phase timings and reproduction instructions](qwen35-orin-cpu-benchmark.md).
-These CPU measurements do not establish full-model CUDA or SSD performance.

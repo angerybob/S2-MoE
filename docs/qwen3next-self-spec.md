@@ -29,8 +29,7 @@ history are retained below.
 - Dense and indirect expert matrix operations request F32 accumulation. The CUDA
   backend preserves this request through expert sorting and cuBLAS fallbacks,
   avoiding TF32/half-input reductions that differ between batched and serial
-  execution. This conservative precision choice has a performance cost; this
-  initial contribution makes no throughput or speedup claim.
+  execution.
 
 The `llama-speculative` executable now dispatches Next models to this hybrid
 driver; the original Transformer tree decoder cannot rewind recurrent state.

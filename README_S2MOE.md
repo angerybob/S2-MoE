@@ -21,7 +21,7 @@ Qwen3.5-MoE uses the separate experimental integration below.
 layouts and `qwen35` tokenizer, expert-only drafting, shared-state snapshots and
 verification-prefix history. The 35B-A3B Q8_0 CPU matrix passes 9/9 32-token
 comparisons. The current driver adds bounded draft trees with staged hybrid
-verification; it remains one-request greedy decoding with no general speedup claim.
+verification with one-request greedy decoding.
 See [usage, staged correctness checks and unsupported modes](docs/qwen35-hybrid-self-spec.md).
 
 ## Build

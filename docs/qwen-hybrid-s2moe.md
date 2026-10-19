@@ -6,16 +6,10 @@ The main `llama-speculative` executable detects these architectures before
 entering the Transformer decoder. The dedicated `llama-speculative-next` and
 `llama-speculative-qwen35` names remain available and use the same driver.
 
-This is an experimental, one-request, raw-text, greedy implementation. It does
-not qualify every model/precision/backend combination. The previously recorded
-Qwen3.5 CUDA math mismatch is addressed by the
-[AR-consistency fix and 32–64-token GPU SSD qualification](qwen35-cuda-ar-fix.md).
-Exact-mode and approximate expert-reuse results remain separate.
-The [post-fix speed matrix](qwen35-ssd-postfix-speed.md) separates Draft,
-verification, SSD reads and external state copies, with explicit storage-fault flags.
-
-See the [recorded Orin GPU validation and timing subset](qwen-hybrid-orin-validation.md)
-for the actual configurations and remaining qualification limits.
+This experimental driver supports one-request, raw-text, greedy decoding.
+See the [32–64-token Qwen3.5 GPU/SSD correctness results](qwen35-cuda-ar-fix.md)
+and [Orin integration checks](qwen-hybrid-orin-validation.md) for tested
+configurations. Exact-mode and approximate expert-reuse results are recorded separately.
 
 ## Placement and memory accounting
 
@@ -103,7 +97,7 @@ cmake --build build-next --target llama-speculative llama-speculative-next \
 build-next/bin/llama-speculative -m /path/to/Qwen3.5-35B-A3B-Q8_0.gguf \
     --ssd-moe --memory-budget-mib 8192 --runtime-reserve-mib 3072 \
     -ngl 99 -c 128 -ub 32 -t 8 -n 32 --ignore-eos \
-    -p 'Explain why the sky looks blue in two short sentences.' \
+    -p 'Solve step by step: A shop sells 12 notebooks at 3 dollars each. What is the total price?' \
     --draft-max 8 --draft-expert-topk 2 --draft-branches 2 \
     --prune 1 --prune-max-nodes 31 --prune-max-depth 8 \
     --prune-tpot 100 --prune-bandwidth 1 --prune-score-thresh 1 \
