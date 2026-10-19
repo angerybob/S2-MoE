@@ -3,7 +3,7 @@ name: Experimental Qwen3-Next
 on:
   pull_request:
     branches: [orin]
-    paths: ['src/**', 'include/**', 'ggml/**', 'examples/speculative-next/**', 'examples/CMakeLists.txt', 'tests/**', '.github/workflows/qwen3next.yml']
+    paths: ['src/**', 'include/**', 'ggml/**', 'examples/speculative-next/**', 'examples/speculative/**', 'examples/CMakeLists.txt', 'tests/**', '.github/workflows/qwen3next.yml']
   push:
     branches: [feature/qwen3next-self-spec]
   workflow_dispatch:
@@ -25,6 +25,6 @@ jobs:
         run: |
           cmake -S . -B build-next -DGGML_CUDA=OFF -DLLAMA_BUILD_TESTS=ON \
             -DLLAMA_BUILD_SERVER=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
-          cmake --build build-next --target llama-speculative-next test-qwen3next-state -j2
+          cmake --build build-next --target llama-speculative llama-speculative-next test-qwen3next-state test-hybrid-placement -j2
       - name: Compare verification-prefix states and greedy output against AR
         run: ctest --test-dir build-next -R qwen3next --output-on-failure

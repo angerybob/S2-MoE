@@ -30,6 +30,7 @@ else()
     add_subdirectory(simple-chat)
     add_subdirectory(speculative)
     add_subdirectory(speculative-next)
+    add_subdirectory(speculative-qwen35)
     add_subdirectory(speculative-simple)
 
     add_subdirectory(gen-docs)

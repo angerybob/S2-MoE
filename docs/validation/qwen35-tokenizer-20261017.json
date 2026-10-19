@@ -1,0 +1,422 @@
+{
+  "schema": 1,
+  "source_revision": "df3778e1347d61eba1894856f2d9021534312510",
+  "source_dirty": false,
+  "reference_revision": "650bf14eb9a922de0f88c9523a271159cc5ae469",
+  "model": {
+    "name": "real-vocab-only.gguf",
+    "size_bytes": 10943040,
+    "sha256": "6bf3a226296ffde203b00083c0ee8d2c99bea17a5b850e12bea72ff0b9938503"
+  },
+  "candidate_binary": {
+    "name": "test-qwen35-ar",
+    "size_bytes": 35128,
+    "sha256": "188df935ced9fa7d57cf57450d63679832e6f3c8567582044a7d6d00e515c129"
+  },
+  "reference_binary": {
+    "name": "qwen35-ar-reference",
+    "size_bytes": 35664,
+    "sha256": "365314dbe79ec2d4712a8841114b0da203ea6c3d445dc0fbb23a3212388aa73b"
+  },
+  "mode": "tokenizer",
+  "tokens": 0,
+  "cases": [
+    {
+      "prompt": "Hello, world!",
+      "results": {
+        "upstream": {
+          "prompt_tokens": [
+            9419,
+            11,
+            1814,
+            0
+          ],
+          "generated_tokens": []
+        },
+        "candidate": {
+          "prompt_tokens": [
+            9419,
+            11,
+            1814,
+            0
+          ],
+          "generated_tokens": []
+        }
+      },
+      "matches_reference": {
+        "candidate": true
+      }
+    },
+    {
+      "prompt": "I'm testing 1234567890.",
+      "results": {
+        "upstream": {
+          "prompt_tokens": [
+            40,
+            2688,
+            7262,
+            220,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            15,
+            13
+          ],
+          "generated_tokens": []
+        },
+        "candidate": {
+          "prompt_tokens": [
+            40,
+            2688,
+            7262,
+            220,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            15,
+            13
+          ],
+          "generated_tokens": []
+        }
+      },
+      "matches_reference": {
+        "candidate": true
+      }
+    },
+    {
+      "prompt": "cafe\u0301 naive\u0308",
+      "results": {
+        "upstream": {
+          "prompt_tokens": [
+            895,
+            1795,
+            52033,
+            47993,
+            136,
+            230
+          ],
+          "generated_tokens": []
+        },
+        "candidate": {
+          "prompt_tokens": [
+            895,
+            1795,
+            52033,
+            47993,
+            136,
+            230
+          ],
+          "generated_tokens": []
+        }
+      },
+      "matches_reference": {
+        "candidate": true
+      }
+    },
+    {
+      "prompt": "na\u0308ive coo\u0308perate",
+      "results": {
+        "upstream": {
+          "prompt_tokens": [
+            3267,
+            136,
+            230,
+            520,
+            1027,
+            78,
+            136,
+            230,
+            76402
+          ],
+          "generated_tokens": []
+        },
+        "candidate": {
+          "prompt_tokens": [
+            3267,
+            136,
+            230,
+            520,
+            1027,
+            78,
+            136,
+            230,
+            76402
+          ],
+          "generated_tokens": []
+        }
+      },
+      "matches_reference": {
+        "candidate": true
+      }
+    },
+    {
+      "prompt": "\u4f60\u597d\uff0c\u4e16\u754c\uff01",
+      "results": {
+        "upstream": {
+          "prompt_tokens": [
+            109266,
+            3709,
+            96748,
+            6115
+          ],
+          "generated_tokens": []
+        },
+        "candidate": {
+          "prompt_tokens": [
+            109266,
+            3709,
+            96748,
+            6115
+          ],
+          "generated_tokens": []
+        }
+      },
+      "matches_reference": {
+        "candidate": true
+      }
+    },
+    {
+      "prompt": "\u0627\u064e\u0644\u0652\u0639\u064e\u0631\u064e\u0628\u0650\u064a\u064e\u0651\u0629",
+      "results": {
+        "upstream": {
+          "prompt_tokens": [
+            5525,
+            149331,
+            187581,
+            153458,
+            150765,
+            151003,
+            178402
+          ],
+          "generated_tokens": []
+        },
+        "candidate": {
+          "prompt_tokens": [
+            5525,
+            149331,
+            187581,
+            153458,
+            150765,
+            151003,
+            178402
+          ],
+          "generated_tokens": []
+        }
+      },
+      "matches_reference": {
+        "candidate": true
+      }
+    },
+    {
+      "prompt": "\u0939\u093f\u0928\u094d\u0926\u0940 \u0967\u0968\u0969",
+      "results": {
+        "upstream": {
+          "prompt_tokens": [
+            215989,
+            150127,
+            177453,
+            220,
+            12256,
+            100,
+            12256,
+            101,
+            12256,
+            102
+          ],
+          "generated_tokens": []
+        },
+        "candidate": {
+          "prompt_tokens": [
+            215989,
+            150127,
+            177453,
+            220,
+            12256,
+            100,
+            12256,
+            101,
+            12256,
+            102
+          ],
+          "generated_tokens": []
+        }
+      },
+      "matches_reference": {
+        "candidate": true
+      }
+    },
+    {
+      "prompt": "\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22",
+      "results": {
+        "upstream": {
+          "prompt_tokens": [
+            229936
+          ],
+          "generated_tokens": []
+        },
+        "candidate": {
+          "prompt_tokens": [
+            229936
+          ],
+          "generated_tokens": []
+        }
+      },
+      "matches_reference": {
+        "candidate": true
+      }
+    },
+    {
+      "prompt": "emoji \ud83d\udc69\u200d\ud83d\udcbb \ud83c\udde8\ud83c\uddf3",
+      "results": {
+        "upstream": {
+          "prompt_tokens": [
+            36280,
+            59720,
+            102,
+            373,
+            235,
+            88995,
+            119,
+            10838,
+            229,
+            101,
+            9008,
+            229,
+            111
+          ],
+          "generated_tokens": []
+        },
+        "candidate": {
+          "prompt_tokens": [
+            36280,
+            59720,
+            102,
+            373,
+            235,
+            88995,
+            119,
+            10838,
+            229,
+            101,
+            9008,
+            229,
+            111
+          ],
+          "generated_tokens": []
+        }
+      },
+      "matches_reference": {
+        "candidate": true
+      }
+    },
+    {
+      "prompt": "line1\n\n  line2\tend",
+      "results": {
+        "upstream": {
+          "prompt_tokens": [
+            1021,
+            16,
+            271,
+            220,
+            1500,
+            17,
+            6050
+          ],
+          "generated_tokens": []
+        },
+        "candidate": {
+          "prompt_tokens": [
+            1021,
+            16,
+            271,
+            220,
+            1500,
+            17,
+            6050
+          ],
+          "generated_tokens": []
+        }
+      },
+      "matches_reference": {
+        "candidate": true
+      }
+    },
+    {
+      "prompt": "<|im_start|>user\nHello<|im_end|>",
+      "results": {
+        "upstream": {
+          "prompt_tokens": [
+            248045,
+            846,
+            198,
+            9419,
+            248046
+          ],
+          "generated_tokens": []
+        },
+        "candidate": {
+          "prompt_tokens": [
+            248045,
+            846,
+            198,
+            9419,
+            248046
+          ],
+          "generated_tokens": []
+        }
+      },
+      "matches_reference": {
+        "candidate": true
+      }
+    },
+    {
+      "prompt": " A\u030a \u00c5 e\u0301 \u00e9",
+      "results": {
+        "upstream": {
+          "prompt_tokens": [
+            357,
+            136,
+            232,
+            76533,
+            378,
+            52033,
+            3825
+          ],
+          "generated_tokens": []
+        },
+        "candidate": {
+          "prompt_tokens": [
+            357,
+            136,
+            232,
+            76533,
+            378,
+            52033,
+            3825
+          ],
+          "generated_tokens": []
+        }
+      },
+      "matches_reference": {
+        "candidate": true
+      }
+    }
+  ],
+  "status": "passed",
+  "coverage": {
+    "comparisons": 12,
+    "matching": 12
+  }
+}

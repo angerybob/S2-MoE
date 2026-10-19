@@ -36,6 +36,7 @@ enum llm_arch {
     LLM_ARCH_QWEN3,
     LLM_ARCH_QWEN3MOE,
     LLM_ARCH_QWEN3NEXT,
+    LLM_ARCH_QWEN35MOE,
     LLM_ARCH_QWEN3VL,
     LLM_ARCH_PHI2,
     LLM_ARCH_PHI3,
@@ -371,6 +372,8 @@ enum llm_tensor {
     LLM_TENSOR_SSM_NORM,
     LLM_TENSOR_SSM_OUT,
     LLM_TENSOR_SSM_BETA_ALPHA,
+    LLM_TENSOR_SSM_ALPHA,
+    LLM_TENSOR_SSM_BETA,
     LLM_TENSOR_TIME_MIX_W0,
     LLM_TENSOR_TIME_MIX_W1,
     LLM_TENSOR_TIME_MIX_W2,
@@ -551,4 +554,5 @@ const llm_tensor_info & llm_tensor_info_for(llm_tensor tensor);
 
 bool llm_arch_is_recurrent(const llm_arch & arch);
 bool llm_arch_is_hybrid   (const llm_arch & arch);
+bool llm_arch_is_qwen_delta_net(const llm_arch & arch);
 bool llm_arch_is_diffusion(const llm_arch & arch);

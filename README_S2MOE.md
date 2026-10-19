@@ -1,11 +1,28 @@
 # S2-MoE notes
 
+## Qwen hybrid S2-MoE deployment
+
+Next and Qwen3.5-MoE now share an architecture-aware `llama-speculative` driver
+for GPU SSD execution, budgeted partial expert residency, adaptive drafts/trees,
+state restoration and optional verification-time route reuse. See the
+[current deployment guide](docs/qwen-hybrid-s2moe.md); the model-specific pages
+below retain their earlier correctness evidence. This remains experimental.
+
 ## Experimental Qwen3-Next
 
 `llama-speculative-next` adds a limited greedy, expert-sparse self-draft path for
 Qwen3-Next with shared hybrid memory and verification-prefix recurrent history.
 See [usage, state semantics, tests, limitations, and memory costs](docs/qwen3next-self-spec.md).
-Qwen3.5-MoE and its tokenizer are not supported by this contribution.
+Qwen3.5-MoE uses the separate experimental integration below.
+
+## Experimental Qwen3.5-MoE
+
+`llama-speculative-qwen35` supports the recorded text-only `qwen35moe` GGUF
+layouts and `qwen35` tokenizer, expert-only drafting, shared-state snapshots and
+verification-prefix history. The 35B-A3B Q8_0 CPU matrix passes 9/9 32-token
+comparisons. The current driver adds bounded draft trees with staged hybrid
+verification; it remains one-request greedy decoding with no general speedup claim.
+See [usage, staged correctness checks and unsupported modes](docs/qwen35-hybrid-self-spec.md).
 
 ## Build
 

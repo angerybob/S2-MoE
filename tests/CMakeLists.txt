@@ -1,11 +1,40 @@
 llama_add_compile_flags()
 
+add_executable(test-qwen35-ar qwen35-reference-ar.cpp)
+target_link_libraries(test-qwen35-ar PRIVATE llama)
+target_compile_features(test-qwen35-ar PRIVATE cxx_std_17)
+
+add_executable(test-qwen35-expert-draft test-qwen35-expert-draft.cpp)
+target_link_libraries(test-qwen35-expert-draft PRIVATE llama)
+target_compile_features(test-qwen35-expert-draft PRIVATE cxx_std_17)
+
+if (GGML_CUDA)
+    add_executable(test-cuda-float-batch test-cuda-float-batch.cpp)
+    target_link_libraries(test-cuda-float-batch PRIVATE ggml)
+    target_compile_features(test-cuda-float-batch PRIVATE cxx_std_17)
+    add_test(NAME qwen35-cuda-float-batch COMMAND test-cuda-float-batch)
+    set_tests_properties(qwen35-cuda-float-batch PROPERTIES SKIP_RETURN_CODE 77)
+    add_executable(test-cuda-moe-batch test-cuda-moe-batch.cpp)
+    target_link_libraries(test-cuda-moe-batch PRIVATE ggml)
+    target_compile_features(test-cuda-moe-batch PRIVATE cxx_std_17)
+    add_test(NAME qwen35-cuda-moe-batch COMMAND test-cuda-moe-batch)
+    set_tests_properties(qwen35-cuda-moe-batch PROPERTIES SKIP_RETURN_CODE 77)
+endif()
+
 # Experimental Qwen3-Next tests use deterministic random weights, not downloads.
 if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
+add_executable(diagnose-qwen-hybrid diagnose-qwen-hybrid.cpp)
+target_link_libraries(diagnose-qwen-hybrid PRIVATE llama)
+target_include_directories(diagnose-qwen-hybrid PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/vendor)
+target_compile_features(diagnose-qwen-hybrid PRIVATE cxx_std_17)
 add_executable(test-qwen3next-state test-qwen3next-state.cpp)
 target_link_libraries(test-qwen3next-state PRIVATE llama)
 target_include_directories(test-qwen3next-state PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_features(test-qwen3next-state PRIVATE cxx_std_17)
+add_executable(test-hybrid-placement test-hybrid-placement.cpp)
+target_link_libraries(test-hybrid-placement PRIVATE llama)
+target_include_directories(test-hybrid-placement PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_features(test-hybrid-placement PRIVATE cxx_std_17)
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if (Python3_Interpreter_FOUND AND LLAMA_BUILD_EXAMPLES)
     execute_process(COMMAND ${Python3_EXECUTABLE} -c "import numpy"
@@ -17,14 +46,66 @@ if (Python3_Interpreter_FOUND AND LLAMA_BUILD_EXAMPLES)
                      ${CMAKE_CURRENT_SOURCE_DIR}/make-qwen3next-fixture.py ${NEXT_FIXTURE} ${NEXT_TYPE})
             set_tests_properties(qwen3next-fixture-${NEXT_TYPE} PROPERTIES FIXTURES_SETUP qwen3next-${NEXT_TYPE})
             add_test(NAME qwen3next-state-${NEXT_TYPE} COMMAND test-qwen3next-state ${NEXT_FIXTURE} 0)
+            add_test(NAME qwen3next-placement-${NEXT_TYPE} COMMAND test-hybrid-placement ${NEXT_FIXTURE})
             add_test(NAME qwen3next-equivalence-${NEXT_TYPE} COMMAND ${Python3_EXECUTABLE}
                      ${CMAKE_CURRENT_SOURCE_DIR}/test-qwen3next-equivalence.py
                      $<TARGET_FILE:llama-speculative-next> ${NEXT_FIXTURE} 0)
-            set_tests_properties(qwen3next-state-${NEXT_TYPE} qwen3next-equivalence-${NEXT_TYPE}
+            set_tests_properties(qwen3next-state-${NEXT_TYPE} qwen3next-equivalence-${NEXT_TYPE} qwen3next-placement-${NEXT_TYPE}
                                  PROPERTIES FIXTURES_REQUIRED qwen3next-${NEXT_TYPE})
         endforeach()
     endif()
 endif()
+endif()
+
+# Reuse the same prefix-state and executable tests for Qwen3.5, separately.
+if (TARGET test-qwen3next-state AND Python3_Interpreter_FOUND AND LLAMA_BUILD_EXAMPLES AND NEXT_NUMPY_STATUS EQUAL 0)
+    foreach(QWEN35_TYPE f32 f16 bf16)
+        set(QWEN35_FIXTURE ${CMAKE_CURRENT_BINARY_DIR}/qwen35-tiny-${QWEN35_TYPE}.gguf)
+        add_test(NAME qwen35-fixture-${QWEN35_TYPE} COMMAND ${Python3_EXECUTABLE}
+                 ${CMAKE_CURRENT_SOURCE_DIR}/make-qwen3next-fixture.py ${QWEN35_FIXTURE} ${QWEN35_TYPE} qwen35moe)
+        set_tests_properties(qwen35-fixture-${QWEN35_TYPE} PROPERTIES FIXTURES_SETUP qwen35-${QWEN35_TYPE})
+        add_test(NAME qwen35-state-${QWEN35_TYPE} COMMAND test-qwen3next-state ${QWEN35_FIXTURE} 0)
+        add_test(NAME qwen35-placement-${QWEN35_TYPE} COMMAND test-hybrid-placement ${QWEN35_FIXTURE})
+        add_test(NAME qwen35-equivalence-${QWEN35_TYPE} COMMAND ${Python3_EXECUTABLE}
+                 ${CMAKE_CURRENT_SOURCE_DIR}/test-qwen3next-equivalence.py
+                 $<TARGET_FILE:llama-speculative-qwen35> ${QWEN35_FIXTURE} 0)
+        set_tests_properties(qwen35-state-${QWEN35_TYPE} qwen35-equivalence-${QWEN35_TYPE} qwen35-placement-${QWEN35_TYPE}
+                             PROPERTIES FIXTURES_REQUIRED qwen35-${QWEN35_TYPE})
+    endforeach()
+    add_test(NAME qwen35-expert-draft COMMAND test-qwen35-expert-draft
+             ${CMAKE_CURRENT_BINARY_DIR}/qwen35-tiny-f32.gguf 0)
+    set_tests_properties(qwen35-expert-draft PROPERTIES FIXTURES_REQUIRED qwen35-f32)
+endif()
+
+# Packed Q8 metadata and GPU SSD paths are qualified independently from the
+# existing floating-weight state fixtures.
+if (TARGET test-hybrid-placement AND Python3_Interpreter_FOUND AND LLAMA_BUILD_EXAMPLES AND NEXT_NUMPY_STATUS EQUAL 0)
+    foreach(HYBRID_ARCH qwen3next qwen35moe)
+        if (HYBRID_ARCH STREQUAL qwen3next)
+            set(HYBRID_NAME qwen3next)
+            set(HYBRID_EXECUTABLE llama-speculative-next)
+        else()
+            set(HYBRID_NAME qwen35)
+            set(HYBRID_EXECUTABLE llama-speculative-qwen35)
+        endif()
+        set(HYBRID_Q8 ${CMAKE_CURRENT_BINARY_DIR}/${HYBRID_NAME}-tiny-q8_0.gguf)
+        add_test(NAME ${HYBRID_NAME}-fixture-q8_0 COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/make-qwen3next-fixture.py ${HYBRID_Q8} q8_0 ${HYBRID_ARCH})
+        set_tests_properties(${HYBRID_NAME}-fixture-q8_0 PROPERTIES FIXTURES_SETUP ${HYBRID_NAME}-q8_0)
+        add_test(NAME ${HYBRID_NAME}-placement-q8_0 COMMAND test-hybrid-placement ${HYBRID_Q8})
+        set_tests_properties(${HYBRID_NAME}-placement-q8_0 PROPERTIES FIXTURES_REQUIRED ${HYBRID_NAME}-q8_0)
+        add_test(NAME ${HYBRID_NAME}-main-entry COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/test-hybrid-main.py $<TARGET_FILE:llama-speculative>
+            $<TARGET_FILE:${HYBRID_EXECUTABLE}> ${CMAKE_CURRENT_BINARY_DIR}/${HYBRID_NAME}-tiny-f32.gguf
+            ${PROJECT_SOURCE_DIR}/examples/speculative/run_spec.py)
+        set_tests_properties(${HYBRID_NAME}-main-entry PROPERTIES FIXTURES_REQUIRED ${HYBRID_NAME}-f32)
+        if (GGML_CUDA)
+            add_test(NAME ${HYBRID_NAME}-ssd-gpu COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/test-hybrid-ssd.py --exe $<TARGET_FILE:${HYBRID_EXECUTABLE}>
+                --model ${HYBRID_Q8} --output ${CMAKE_CURRENT_BINARY_DIR}/${HYBRID_NAME}-ssd-gpu)
+            set_tests_properties(${HYBRID_NAME}-ssd-gpu PROPERTIES FIXTURES_REQUIRED ${HYBRID_NAME}-q8_0)
+        endif()
+    endforeach()
 endif()
 
 function(llama_build source)

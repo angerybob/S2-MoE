@@ -1,0 +1,44 @@
+name: Experimental Qwen3.5 hybrid self-speculation
+on:
+  push:
+    branches: [feature/qwen35-hybrid-self-spec]
+  pull_request:
+    branches: [orin]
+    paths: ['src/**', 'include/**', 'ggml/**', 'examples/speculative-next/**', 'examples/speculative-qwen35/**', 'examples/speculative/**', 'tests/**', '.github/workflows/qwen35.yml']
+permissions:
+  contents: read
+jobs:
+  independent-ar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: candidate
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: 650bf14eb9a922de0f88c9523a271159cc5ae469
+          path: upstream
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install numpy pyyaml
+      - name: Build candidate and an independent upstream CPU reference
+        run: |
+          cmake -S candidate -B candidate/build-qwen35 -DGGML_CUDA=OFF -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_SERVER=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build candidate/build-qwen35 --target llama-speculative llama-speculative-qwen35 llama-speculative-next test-qwen35-ar test-qwen35-expert-draft test-qwen3next-state test-hybrid-placement -j2
+          cmake -S upstream -B upstream/build-cpu -DGGML_CUDA=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build upstream/build-cpu --target llama -j2
+          c++ -O2 -std=c++17 -Iupstream/include -Iupstream/ggml/include candidate/tests/qwen35-reference-ar.cpp -Lupstream/build-cpu/bin -lllama -lggml -lggml-base -Wl,-rpath,$GITHUB_WORKSPACE/upstream/build-cpu/bin -o upstream/build-cpu/bin/qwen35-ar-reference
+      - name: Verify Qwen3.5 F32 AR against upstream and preserve Next regressions
+        run: |
+          python candidate/tests/make-qwen3next-fixture.py candidate/build-qwen35/qwen35-tiny-f32.gguf f32 qwen35moe
+          python candidate/tests/validate-qwen35-ar.py --candidate candidate/build-qwen35/bin/test-qwen35-ar --reference upstream/build-cpu/bin/qwen35-ar-reference --reference-revision 650bf14eb9a922de0f88c9523a271159cc5ae469 --model candidate/build-qwen35/qwen35-tiny-f32.gguf --output candidate/build-qwen35/ar-reference-results
+          ctest --test-dir candidate/build-qwen35 -R "qwen3next|qwen35" --output-on-failure
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qwen35-independent-ar
+          path: candidate/build-qwen35/ar-reference-results
+          if-no-files-found: warn

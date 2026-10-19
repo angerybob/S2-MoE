@@ -1,0 +1,5 @@
+add_executable(llama-speculative-qwen35 ../speculative-next/speculative-next.cpp)
+target_link_libraries(llama-speculative-qwen35 PRIVATE llama)
+target_include_directories(llama-speculative-qwen35 PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_features(llama-speculative-qwen35 PRIVATE cxx_std_17)
+target_compile_definitions(llama-speculative-qwen35 PRIVATE LLAMA_EXPERIMENTAL_QWEN35=1)

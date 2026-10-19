@@ -22,6 +22,12 @@ def main():
     with open(config_file, 'r', encoding='utf-8') as f:
         config = json.load(f)
 
+    if config.get("engine") == "hybrid":
+        from run_hybrid import build_command
+        command = build_command(config)
+        print("Executing hybrid S2-MoE:", " ".join(command), flush=True)
+        raise SystemExit(subprocess.run(command, check=False).returncode)
+
     executable = config.get("binary_path", "./llama-speculative")
     cmd = [executable]
 

@@ -312,6 +312,8 @@ struct llama_layer {
     struct ggml_tensor * ssm_conv1d_b = nullptr;
     struct ggml_tensor * ssm_dt_b     = nullptr;
     struct ggml_tensor * ssm_beta_alpha = nullptr;
+    struct ggml_tensor * ssm_alpha = nullptr;
+    struct ggml_tensor * ssm_beta = nullptr;
 
     // rwkv
     struct ggml_tensor * time_mix_w1         = nullptr;

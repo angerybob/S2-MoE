@@ -3,10 +3,13 @@
 #include "sampling.h"
 #include "log.h"
 #include "llama.h"
+#include "gguf.h"
+#include "../speculative-next/hybrid-driver.h"
 #include "prune_routing_noise.h"
 
 #include <algorithm>
 #include <cmath>
+#include <climits>
 #include <cstdio>
 #include <cstring>
 #include <cctype>
@@ -25,7 +28,11 @@
 #include <fstream>
 #include <iostream>
 #include <iomanip>
+#if defined(LLAMA_SPEC_NVTX3)
 #include <nvtx3/nvToolsExt.h>
+#elif defined(LLAMA_SPEC_NVTX2)
+#include <nvToolsExt.h>
+#endif
 
 
 // ================= Trace 结构体定义 =================
@@ -569,9 +576,13 @@ struct MoeUtilityCascadeState {
 };
 
 struct NvtxRange {
+#if defined(LLAMA_SPEC_NVTX3) || defined(LLAMA_SPEC_NVTX2)
     nvtxRangeId_t id;
     NvtxRange(const char * name) { id = nvtxRangeStartA(name); }
     ~NvtxRange() { nvtxRangeEnd(id); }
+#else
+    explicit NvtxRange(const char *) {}
+#endif
 };
 
 
@@ -1827,7 +1838,28 @@ static void draft_tree_prune(
     }
 }
 
+static bool is_hybrid_gguf(int argc, char ** argv) {
+    const char * path = nullptr;
+    for (int i = 1; i + 1 < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "-m" || arg == "--model") path = argv[++i];
+        else if (arg == "-p" || arg == "--prompt" || arg == "--model-draft") ++i;
+    }
+    if (!path) return false;
+    gguf_context * metadata = gguf_init_from_file(path, {true, nullptr});
+    if (!metadata) return false;
+    const int key = gguf_find_key(metadata, "general.architecture");
+    bool hybrid = false;
+    if (key >= 0 && gguf_get_kv_type(metadata, key) == GGUF_TYPE_STRING) {
+        const std::string arch = gguf_get_val_str(metadata, key);
+        hybrid = arch == "qwen3next" || arch == "qwen35moe";
+    }
+    gguf_free(metadata);
+    return hybrid;
+}
+
 int main(int argc, char ** argv) {
+    if (is_hybrid_gguf(argc, argv)) return llama_hybrid_main(argc, argv);
     common_params params;
 
     // needed to get candidate probs even for temp <= 0.0
@@ -1936,9 +1968,12 @@ int main(int argc, char ** argv) {
     if (model_tgt) {
         char architecture[64] = {};
         llama_model_meta_val_str(model_tgt, "general.architecture", architecture, sizeof(architecture));
-        if (std::string(architecture) == "qwen3next") {
-            LOG_ERR("Qwen3-Next requires the experimental llama-speculative-next executable; "
-                    "this tree decoder does not rewind recurrent state. See docs/qwen3next-self-spec.md\n");
+        if (std::string(architecture) == "qwen3next" || std::string(architecture) == "qwen35moe") {
+            const bool qwen35 = std::string(architecture) == "qwen35moe";
+            LOG_ERR("%s requires the experimental %s executable; this tree decoder does not rewind "
+                    "recurrent state. See docs/%s\n", architecture,
+                    qwen35 ? "llama-speculative-qwen35" : "llama-speculative-next",
+                    qwen35 ? "qwen35-hybrid-self-spec.md" : "qwen3next-self-spec.md");
             return 1;
         }
     }

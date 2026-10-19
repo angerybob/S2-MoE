@@ -79,6 +79,13 @@ extern "C" {
     LLAMA_API void llama_clear_ssd_cache_backend(void);
     LLAMA_API void llama_ssd_profile_reset(void);
     LLAMA_API void llama_ssd_profile_snapshot(struct llama_ssd_profile * profile);
+    // 0=prefill, 1=draft, 2=target. Synchronize before changing phases.
+    LLAMA_API void llama_ssd_profile_set_phase(int phase);
+    struct llama_buffer_usage {
+        uint64_t model_bytes;
+        uint64_t state_bytes;   // includes reserved verification history
+        uint64_t compute_bytes; // scheduler buffers and output buffer
+    };
     struct llama_vocab;
     struct llama_model;
     struct llama_context;
@@ -325,6 +332,9 @@ extern "C" {
         bool check_tensors;   // validate model tensor data
         bool use_extra_bufts; // use extra buffer types (used for weight repacking)
         const char * hot_experts_path;
+        // Optional SSD weight budget. Includes all non-routed weights and hot
+        // experts; the caller must first subtract its runtime/state reserve.
+        uint64_t ssd_weight_budget;
     };
 
     // NOTE: changing the default values of parameters marked as [EXPERIMENTAL] may cause crashes or incorrect results in certain configurations
@@ -700,7 +710,7 @@ extern "C" {
                  llama_pos p0,
                  llama_pos p1);
 
-    // Experimental Qwen3-Next verification-prefix history. Single seq_id=0 only.
+    // Experimental Qwen3-Next/Qwen3.5-MoE prefix history. Single seq_id=0 only.
     // Reserve before decoding; capacity is in [1, 32] and cannot be grown later.
     // Capture exactly one contiguous verification ubatch; caller must disable
     // CUDA graphs and graph reuse while using this experimental API.
@@ -1465,6 +1475,7 @@ extern "C" {
 
     // print a breakdown of per-device memory use via LLAMA_LOG:
     LLAMA_API void llama_memory_breakdown_print(const struct llama_context * ctx);
+    LLAMA_API struct llama_buffer_usage llama_get_buffer_usage(const struct llama_context * ctx);
 
     //
     // training

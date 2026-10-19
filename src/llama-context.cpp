@@ -119,7 +119,7 @@ llama_context::llama_context(
         const char * LLAMA_GRAPH_REUSE_DISABLE = getenv("LLAMA_GRAPH_REUSE_DISABLE");
         graph_reuse_disable = LLAMA_GRAPH_REUSE_DISABLE ? (atoi(LLAMA_GRAPH_REUSE_DISABLE) != 0) : graph_reuse_disable;
         // Qwen3-Next verification can add/remove recurrent history outputs.
-        graph_reuse_disable = graph_reuse_disable || model.arch == LLM_ARCH_QWEN3NEXT;
+        graph_reuse_disable = graph_reuse_disable || llm_arch_is_qwen_delta_net(model.arch);
 
         if (graph_reuse_disable) {
             LLAMA_LOG_WARN("%s: graph reuse disabled\n", __func__);
@@ -249,8 +249,8 @@ llama_context::llama_context(
 
         LLAMA_LOG_DEBUG("%s: max_nodes = %zu\n", __func__, max_nodes);
 
-        gf_res_prev.reset(new llm_graph_result(max_nodes, model.arch == LLM_ARCH_QWEN3NEXT));
-        gf_res_reserve.reset(new llm_graph_result(max_nodes, model.arch == LLM_ARCH_QWEN3NEXT));
+        gf_res_prev.reset(new llm_graph_result(max_nodes, llm_arch_is_qwen_delta_net(model.arch)));
+        gf_res_reserve.reset(new llm_graph_result(max_nodes, llm_arch_is_qwen_delta_net(model.arch)));
 
         // TODO: move these checks to ggml_backend_sched
         // enabling pipeline parallelism in the scheduler increases memory usage, so it is only done when necessary
@@ -1422,7 +1422,7 @@ int llama_context::decode(const llama_batch & batch_inp) {
 
     // EAGLE3: Auto-update draft hidden states after successful decode
     // This automatically extracts and stores the last layer hidden states for draft model usage
-    if (is_draft_context && model.arch != LLM_ARCH_QWEN3NEXT) {
+    if (is_draft_context && !llm_arch_is_qwen_delta_net(model.arch)) {
         auto_update_draft_hidden_states();
         LLAMA_LOG_DEBUG("EAGLE3: Auto-updated draft hidden states for draft context\n");
     }
@@ -1533,7 +1533,7 @@ void llama_context::output_reorder() {
 //
 
 uint32_t llama_context::graph_max_nodes() const {
-    if (model.arch == LLM_ARCH_QWEN3NEXT) {
+    if (llm_arch_is_qwen_delta_net(model.arch)) {
         // DeltaNet is unrolled per token in this compatibility graph. A budget
         // based only on weight count underallocates long prompt microbatches.
         const uint64_t nodes = 128ull * model.hparams.n_layer * (cparams.n_ubatch + 1ull) +
@@ -1544,7 +1544,7 @@ uint32_t llama_context::graph_max_nodes() const {
     return std::max<uint32_t>(1024u, 8u*model.n_tensors());
 }
 // uint32_t llama_context::graph_max_nodes(uint32_t n_tokens) const {
-//     if (model.arch == LLM_ARCH_QWEN3NEXT) {
+//     if (llm_arch_is_qwen_delta_net(model.arch)) {
 //         return std::max<uint32_t>(n_tokens * 40, 32u * model.n_tensors());
 //     }
 //     return std::max<uint32_t>(1024u, 8u*model.n_tensors());
@@ -2497,7 +2497,20 @@ std::map<ggml_backend_buffer_type_t, llama_memory_breakdown_data> llama_context:
         ggml_backend_t backend = backend_ptr.get();
         ret[ggml_backend_sched_get_buffer_type(sched.get(), backend)].compute += ggml_backend_sched_get_buffer_size(sched.get(), backend);
     }
+    if (buf_output) {
+        ret[ggml_backend_buffer_get_type(buf_output.get())].compute += ggml_backend_buffer_get_size(buf_output.get());
+    }
     return ret;
+}
+
+llama_buffer_usage llama_get_buffer_usage(const llama_context * ctx) {
+    llama_buffer_usage usage = {};
+    for (const auto & item : ctx->memory_breakdown()) {
+        usage.model_bytes += item.second.model;
+        usage.state_bytes += item.second.context;
+        usage.compute_bytes += item.second.compute;
+    }
+    return usage;
 }
 
 //

@@ -37,10 +37,17 @@ The chart highlights two representative workloads from the complete evaluation: 
 
 ## Quick start
 
-For experimental **Qwen3-Next expert-only self-speculation**, use the dedicated
-`llama-speculative-next` entry point and follow the
-[Next setup, correctness checks, and limitations](docs/qwen3next-self-spec.md).
-This integration does not add Qwen3.5-MoE support.
+Experimental **Qwen3-Next and Qwen3.5-MoE** now use the same `llama-speculative`
+entry point, with shared hybrid memory, SSD/partial-expert residency, bounded
+adaptive draft trees and optional verification-time expert reuse. Follow the
+[hybrid S2-MoE deployment guide](docs/qwen-hybrid-s2moe.md) for memory budgets,
+GPU execution, exact versus approximate modes, and validation limits. Dedicated
+`llama-speculative-next` / `llama-speculative-qwen35` aliases remain available.
+The paper's speedup claims do not automatically apply to these experimental ports.
+The [Qwen3.5 CUDA consistency report](docs/qwen35-cuda-ar-fix.md) records the
+attention-reduction fix and completed GPU SSD comparisons at 32–64 output tokens.
+The [post-fix GPU/SSD timing report](docs/qwen35-ssd-postfix-speed.md) records
+repeated depth/expert/pruning measurements and the observed NVMe timeout limitation.
 
 Use the `orin` branch for Jetson AGX Orin and the `4090` branch for a single RTX 4090.
 

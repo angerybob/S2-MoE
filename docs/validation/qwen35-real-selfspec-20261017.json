@@ -1,0 +1,1353 @@
+{
+  "schema": 1,
+  "started_at": "2026-10-17T16:58:08.066914+00:00",
+  "source_revision": "d7e1ce53aaeb540435d52030d56d7ab398315723",
+  "binary": {
+    "name": "llama-speculative-qwen35",
+    "size_bytes": 45824,
+    "mtime_ns": 1792253842466198510
+  },
+  "model": {
+    "name": "Qwen3.5-35B-A3B-local-Q8_0-20261017.gguf",
+    "size_bytes": 36903139904,
+    "mtime_ns": 1792252465636074469
+  },
+  "tokens_per_case": 32,
+  "gpu_layers": 0,
+  "ssd_moe": false,
+  "shared_settings": {
+    "context": 256,
+    "ubatch": 32,
+    "threads": 8,
+    "temp": 0,
+    "raw_prompts": true,
+    "ignore_eos": true
+  },
+  "configs": [
+    [
+      1,
+      1
+    ],
+    [
+      4,
+      2
+    ],
+    [
+      8,
+      4
+    ]
+  ],
+  "prompts": {
+    "science": "Explain why the sky looks blue in two short sentences.",
+    "code": "Write a Python function that returns the nth Fibonacci number.",
+    "math": "Solve step by step: A shop sells 12 notebooks at 3 dollars each. What is the total price?"
+  },
+  "cases": [
+    {
+      "id": "science-ar",
+      "ar": true,
+      "depth": 0,
+      "experts": 1,
+      "exit_code": 0,
+      "log": "science-ar/run.log",
+      "valid": true,
+      "tokens": [
+        271,
+        248068,
+        198,
+        90700,
+        8340,
+        25,
+        271,
+        16,
+        13,
+        220,
+        2972,
+        2014,
+        53983,
+        279,
+        5952,
+        64700,
+        198,
+        262,
+        348,
+        256,
+        31819,
+        25,
+        8169,
+        279,
+        12515,
+        5686,
+        6105,
+        13,
+        198,
+        262,
+        348,
+        256
+      ],
+      "token_count": 32,
+      "generated": 32,
+      "accepted": 0,
+      "proposed": 0,
+      "rounds": 0,
+      "commit_replay": 0,
+      "commits": [],
+      "accepted_lengths": []
+    },
+    {
+      "id": "science-d1-k1",
+      "ar": false,
+      "depth": 1,
+      "experts": 1,
+      "exit_code": 0,
+      "log": "science-d1-k1/run.log",
+      "valid": true,
+      "tokens": [
+        271,
+        248068,
+        198,
+        90700,
+        8340,
+        25,
+        271,
+        16,
+        13,
+        220,
+        2972,
+        2014,
+        53983,
+        279,
+        5952,
+        64700,
+        198,
+        262,
+        348,
+        256,
+        31819,
+        25,
+        8169,
+        279,
+        12515,
+        5686,
+        6105,
+        13,
+        198,
+        262,
+        348,
+        256
+      ],
+      "token_count": 32,
+      "generated": 32,
+      "accepted": 12,
+      "proposed": 20,
+      "rounds": 20,
+      "commit_replay": 0,
+      "commits": [
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        }
+      ],
+      "accepted_lengths": [
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "matches_ar": true
+    },
+    {
+      "id": "science-d4-k2",
+      "ar": false,
+      "depth": 4,
+      "experts": 2,
+      "exit_code": 0,
+      "log": "science-d4-k2/run.log",
+      "valid": true,
+      "tokens": [
+        271,
+        248068,
+        198,
+        90700,
+        8340,
+        25,
+        271,
+        16,
+        13,
+        220,
+        2972,
+        2014,
+        53983,
+        279,
+        5952,
+        64700,
+        198,
+        262,
+        348,
+        256,
+        31819,
+        25,
+        8169,
+        279,
+        12515,
+        5686,
+        6105,
+        13,
+        198,
+        262,
+        348,
+        256
+      ],
+      "token_count": 32,
+      "generated": 32,
+      "accepted": 23,
+      "proposed": 34,
+      "rounds": 9,
+      "commit_replay": 0,
+      "commits": [
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 3,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 3,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 4,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 3,
+          "verified_tokens": 3,
+          "bytes": 65863680,
+          "copy_audited": true
+        }
+      ],
+      "accepted_lengths": [
+        1,
+        1,
+        2,
+        2,
+        3,
+        4,
+        4,
+        4,
+        2
+      ],
+      "matches_ar": true
+    },
+    {
+      "id": "science-d8-k4",
+      "ar": false,
+      "depth": 8,
+      "experts": 4,
+      "exit_code": 0,
+      "log": "science-d8-k4/run.log",
+      "valid": true,
+      "tokens": [
+        271,
+        248068,
+        198,
+        90700,
+        8340,
+        25,
+        271,
+        16,
+        13,
+        220,
+        2972,
+        2014,
+        53983,
+        279,
+        5952,
+        64700,
+        198,
+        262,
+        348,
+        256,
+        31819,
+        25,
+        8169,
+        279,
+        12515,
+        5686,
+        6105,
+        13,
+        198,
+        262,
+        348,
+        256
+      ],
+      "token_count": 32,
+      "generated": 32,
+      "accepted": 28,
+      "proposed": 28,
+      "rounds": 4,
+      "commit_replay": 0,
+      "commits": [
+        {
+          "prefix_tokens": 9,
+          "verified_tokens": 9,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 9,
+          "verified_tokens": 9,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 9,
+          "verified_tokens": 9,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        }
+      ],
+      "accepted_lengths": [
+        8,
+        8,
+        8,
+        4
+      ],
+      "matches_ar": true
+    },
+    {
+      "id": "code-ar",
+      "ar": true,
+      "depth": 0,
+      "experts": 1,
+      "exit_code": 0,
+      "log": "code-ar/run.log",
+      "valid": true,
+      "tokens": [
+        271,
+        71093,
+        12305,
+        198,
+        727,
+        73111,
+        1393,
+        1590,
+        198,
+        262,
+        413,
+        307,
+        2564,
+        220,
+        15,
+        25,
+        198,
+        285,
+        460,
+        220,
+        15,
+        198,
+        262,
+        4265,
+        307,
+        606,
+        220,
+        16,
+        25,
+        198,
+        285,
+        460
+      ],
+      "token_count": 32,
+      "generated": 32,
+      "accepted": 0,
+      "proposed": 0,
+      "rounds": 0,
+      "commit_replay": 0,
+      "commits": [],
+      "accepted_lengths": []
+    },
+    {
+      "id": "code-d1-k1",
+      "ar": false,
+      "depth": 1,
+      "experts": 1,
+      "exit_code": 0,
+      "log": "code-d1-k1/run.log",
+      "valid": true,
+      "tokens": [
+        271,
+        71093,
+        12305,
+        198,
+        727,
+        73111,
+        1393,
+        1590,
+        198,
+        262,
+        413,
+        307,
+        2564,
+        220,
+        15,
+        25,
+        198,
+        285,
+        460,
+        220,
+        15,
+        198,
+        262,
+        4265,
+        307,
+        606,
+        220,
+        16,
+        25,
+        198,
+        285,
+        460
+      ],
+      "token_count": 32,
+      "generated": 32,
+      "accepted": 12,
+      "proposed": 19,
+      "rounds": 19,
+      "commit_replay": 0,
+      "commits": [
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        }
+      ],
+      "accepted_lengths": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "matches_ar": true
+    },
+    {
+      "id": "code-d4-k2",
+      "ar": false,
+      "depth": 4,
+      "experts": 2,
+      "exit_code": 0,
+      "log": "code-d4-k2/run.log",
+      "valid": true,
+      "tokens": [
+        271,
+        71093,
+        12305,
+        198,
+        727,
+        73111,
+        1393,
+        1590,
+        198,
+        262,
+        413,
+        307,
+        2564,
+        220,
+        15,
+        25,
+        198,
+        285,
+        460,
+        220,
+        15,
+        198,
+        262,
+        4265,
+        307,
+        606,
+        220,
+        16,
+        25,
+        198,
+        285,
+        460
+      ],
+      "token_count": 32,
+      "generated": 32,
+      "accepted": 24,
+      "proposed": 30,
+      "rounds": 8,
+      "commit_replay": 0,
+      "commits": [
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 3,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 3,
+          "verified_tokens": 3,
+          "bytes": 65863680,
+          "copy_audited": true
+        }
+      ],
+      "accepted_lengths": [
+        0,
+        4,
+        4,
+        4,
+        2,
+        4,
+        4,
+        2
+      ],
+      "matches_ar": true
+    },
+    {
+      "id": "code-d8-k4",
+      "ar": false,
+      "depth": 8,
+      "experts": 4,
+      "exit_code": 0,
+      "log": "code-d8-k4/run.log",
+      "valid": true,
+      "tokens": [
+        271,
+        71093,
+        12305,
+        198,
+        727,
+        73111,
+        1393,
+        1590,
+        198,
+        262,
+        413,
+        307,
+        2564,
+        220,
+        15,
+        25,
+        198,
+        285,
+        460,
+        220,
+        15,
+        198,
+        262,
+        4265,
+        307,
+        606,
+        220,
+        16,
+        25,
+        198,
+        285,
+        460
+      ],
+      "token_count": 32,
+      "generated": 32,
+      "accepted": 28,
+      "proposed": 28,
+      "rounds": 4,
+      "commit_replay": 0,
+      "commits": [
+        {
+          "prefix_tokens": 9,
+          "verified_tokens": 9,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 9,
+          "verified_tokens": 9,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 9,
+          "verified_tokens": 9,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        }
+      ],
+      "accepted_lengths": [
+        8,
+        8,
+        8,
+        4
+      ],
+      "matches_ar": true
+    },
+    {
+      "id": "math-ar",
+      "ar": true,
+      "depth": 0,
+      "experts": 1,
+      "exit_code": 0,
+      "log": "math-ar/run.log",
+      "valid": true,
+      "tokens": [
+        271,
+        8046,
+        220,
+        16,
+        25,
+        62366,
+        279,
+        1324,
+        314,
+        75842,
+        321,
+        279,
+        3240,
+        791,
+        35935,
+        13,
+        198,
+        12,
+        5447,
+        314,
+        75842,
+        283,
+        220,
+        16,
+        17,
+        198,
+        12,
+        8223,
+        791,
+        35935,
+        283,
+        393
+      ],
+      "token_count": 32,
+      "generated": 32,
+      "accepted": 0,
+      "proposed": 0,
+      "rounds": 0,
+      "commit_replay": 0,
+      "commits": [],
+      "accepted_lengths": []
+    },
+    {
+      "id": "math-d1-k1",
+      "ar": false,
+      "depth": 1,
+      "experts": 1,
+      "exit_code": 0,
+      "log": "math-d1-k1/run.log",
+      "valid": true,
+      "tokens": [
+        271,
+        8046,
+        220,
+        16,
+        25,
+        62366,
+        279,
+        1324,
+        314,
+        75842,
+        321,
+        279,
+        3240,
+        791,
+        35935,
+        13,
+        198,
+        12,
+        5447,
+        314,
+        75842,
+        283,
+        220,
+        16,
+        17,
+        198,
+        12,
+        8223,
+        791,
+        35935,
+        283,
+        393
+      ],
+      "token_count": 32,
+      "generated": 32,
+      "accepted": 14,
+      "proposed": 18,
+      "rounds": 18,
+      "commit_replay": 0,
+      "commits": [
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 2,
+          "bytes": 65863680,
+          "copy_audited": true
+        }
+      ],
+      "accepted_lengths": [
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "matches_ar": true
+    },
+    {
+      "id": "math-d4-k2",
+      "ar": false,
+      "depth": 4,
+      "experts": 2,
+      "exit_code": 0,
+      "log": "math-d4-k2/run.log",
+      "valid": true,
+      "tokens": [
+        271,
+        8046,
+        220,
+        16,
+        25,
+        62366,
+        279,
+        1324,
+        314,
+        75842,
+        321,
+        279,
+        3240,
+        791,
+        35935,
+        13,
+        198,
+        12,
+        5447,
+        314,
+        75842,
+        283,
+        220,
+        16,
+        17,
+        198,
+        12,
+        8223,
+        791,
+        35935,
+        283,
+        393
+      ],
+      "token_count": 32,
+      "generated": 32,
+      "accepted": 25,
+      "proposed": 28,
+      "rounds": 7,
+      "commit_replay": 0,
+      "commits": [
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 2,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 5,
+          "verified_tokens": 5,
+          "bytes": 65863680,
+          "copy_audited": true
+        }
+      ],
+      "accepted_lengths": [
+        4,
+        4,
+        4,
+        1,
+        4,
+        4,
+        4
+      ],
+      "matches_ar": true
+    },
+    {
+      "id": "math-d8-k4",
+      "ar": false,
+      "depth": 8,
+      "experts": 4,
+      "exit_code": 0,
+      "log": "math-d8-k4/run.log",
+      "valid": true,
+      "tokens": [
+        271,
+        8046,
+        220,
+        16,
+        25,
+        62366,
+        279,
+        1324,
+        314,
+        75842,
+        321,
+        279,
+        3240,
+        791,
+        35935,
+        13,
+        198,
+        12,
+        5447,
+        314,
+        75842,
+        283,
+        220,
+        16,
+        17,
+        198,
+        12,
+        8223,
+        791,
+        35935,
+        283,
+        393
+      ],
+      "token_count": 32,
+      "generated": 32,
+      "accepted": 27,
+      "proposed": 37,
+      "rounds": 5,
+      "commit_replay": 0,
+      "commits": [
+        {
+          "prefix_tokens": 7,
+          "verified_tokens": 9,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 9,
+          "verified_tokens": 9,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 1,
+          "verified_tokens": 9,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 9,
+          "verified_tokens": 9,
+          "bytes": 65863680,
+          "copy_audited": true
+        },
+        {
+          "prefix_tokens": 6,
+          "verified_tokens": 6,
+          "bytes": 65863680,
+          "copy_audited": true
+        }
+      ],
+      "accepted_lengths": [
+        6,
+        8,
+        0,
+        8,
+        5
+      ],
+      "matches_ar": true
+    }
+  ],
+  "status": "passed",
+  "coverage": {
+    "comparisons": 9,
+    "matching": 9,
+    "zero_accept_rounds": 21,
+    "partial_accept_rounds": 8,
+    "full_accept_rounds": 65
+  },
+  "completed_at": "2026-10-17T17:00:51.398500+00:00"
+}

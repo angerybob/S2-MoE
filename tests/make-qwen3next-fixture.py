@@ -10,8 +10,9 @@ import gguf  # noqa: E402
 
 
 def main():
-    writer = gguf.GGUFWriter(sys.argv[1], "qwen3next")
-    writer.add_name("Qwen3-Next random correctness fixture (not a language model)")
+    arch = sys.argv[3] if len(sys.argv) > 3 else "qwen3next"
+    writer = gguf.GGUFWriter(sys.argv[1], arch)
+    writer.add_name(f"{arch} random correctness fixture (not a language model)")
     writer.add_context_length(128)
     writer.add_embedding_length(32)
     writer.add_block_count(8)
@@ -24,6 +25,8 @@ def main():
     writer.add_head_count_kv(2)
     writer.add_layer_norm_rms_eps(1e-6)
     writer.add_rope_dimension_count(8)
+    if arch == "qwen35moe":
+        writer.add_rope_dimension_sections([2, 1, 1, 0])
     writer.add_ssm_conv_kernel(4)
     writer.add_ssm_inner_size(32)
     writer.add_ssm_state_size(8)
@@ -40,7 +43,7 @@ def main():
             extra += 1
     tokens = ["<|endoftext|>"] + [chr(c) for c in chars] + ["ab"]
     writer.add_tokenizer_model("gpt2")
-    writer.add_tokenizer_pre("gpt-2")
+    writer.add_tokenizer_pre("qwen35" if arch == "qwen35moe" else "gpt-2")
     writer.add_token_list(tokens)
     writer.add_token_types([3] + [1] * (len(tokens) - 1))
     writer.add_token_merges(["a b"])
@@ -53,7 +56,8 @@ def main():
     def tensor(name, shape, constant=None):
         value = rng.normal(0, 0.08, shape).astype(np.float32) if constant is None else np.full(shape, constant, np.float32)
         if len(shape) >= 2 and "ssm_conv1d" not in name and weight_type != "f32":
-            dtype = {"f16": gguf.GGMLQuantizationType.F16, "bf16": gguf.GGMLQuantizationType.BF16}[weight_type]
+            dtype = {"f16": gguf.GGMLQuantizationType.F16, "bf16": gguf.GGMLQuantizationType.BF16,
+                     "q8_0": gguf.GGMLQuantizationType.Q8_0}[weight_type]
             writer.add_tensor(name, gguf.quantize(value, dtype), raw_dtype=dtype)
         else:
             writer.add_tensor(name, value)
@@ -78,7 +82,11 @@ def main():
             tensor(p + "ssm_conv1d.weight", (64, 4))
             tensor(p + "ssm_dt.bias", (4,), 0)
             tensor(p + "ssm_a", (4,), -1)
-            tensor(p + "ssm_ba.weight", (8, 32))
+            if arch == "qwen35moe":
+                tensor(p + "ssm_alpha.weight", (4, 32))
+                tensor(p + "ssm_beta.weight", (4, 32))
+            else:
+                tensor(p + "ssm_ba.weight", (8, 32))
             tensor(p + "ssm_norm.weight", (8,), 1)
             tensor(p + "ssm_out.weight", (32, 32))
         tensor(p + "ffn_gate_inp.weight", (4, 32))

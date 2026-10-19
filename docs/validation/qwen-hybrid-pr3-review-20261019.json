@@ -1,0 +1,360 @@
+{
+  "base_revision": "bc4129bd23943a8e6542304b03ce18f74cf04549",
+  "candidate_revision": "e87c4921d8bfca3902aae4929cface182db84e12",
+  "triage_run": "https://github.com/angerybob/S2-MoE/actions/runs/39257175549",
+  "lint": {
+    "baseline": 50,
+    "candidate": 50,
+    "added": [],
+    "removed": []
+  },
+  "new_lint_diagnostics_fixed": 5,
+  "fatal_warning_build": {
+    "baseline": {
+      "returncode": 2,
+      "errors": [
+        "ggml/src/ggml-cpu/ops.cpp|the address of \u2018ggml_tensor::name\u2019 will never be NULL [-Werror=address]"
+      ]
+    },
+    "candidate": {
+      "returncode": 2,
+      "errors": [
+        "ggml/src/ggml-cpu/ops.cpp|the address of \u2018ggml_tensor::name\u2019 will never be NULL [-Werror=address]"
+      ]
+    },
+    "added_errors": []
+  },
+  "windows_checkout_baseline_path_codepoints": [
+    1
+  ],
+  "windows_path_tree_entry": "100644 blob e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+  "failed_jobs_inspected": [
+    {
+      "name": "ubuntu-22-cmake-hip",
+      "url": "https://github.com/angerybob/S2-MoE/actions/runs/39256002974/job/118071921348",
+      "errors": [
+        "2026-10-19T13:00:30.5051200Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:235:46: error: use of undeclared identifier 'cudaHostAllocMapped'",
+        "2026-10-19T13:00:30.5119035Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:682:62: error: use of undeclared identifier 'cudaMemcpyDefault'; did you mean 'hipMemcpyDefault'?",
+        "2026-10-19T13:00:30.5128407Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:769:74: error: use of undeclared identifier 'cudaMemcpyDefault'; did you mean 'hipMemcpyDefault'?",
+        "2026-10-19T13:00:30.5138236Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:1065:24: error: use of undeclared identifier 'cudaDeviceMapHost'",
+        "2026-10-19T13:00:30.5140619Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:3458:13: error: unknown type name 'cudaPointerAttributes'; did you mean 'hipPointerAttribute_t'?",
+        "2026-10-19T13:00:30.5144500Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:3470:36: error: use of undeclared identifier 'cudaPointerGetAttributes'; did you mean 'hipPointerGetAttributes'?",
+        "2026-10-19T13:00:30.5150122Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:3471:49: error: no member named 'memoryType' in 'hipPointerAttribute_t'",
+        "2026-10-19T13:00:30.5152313Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:3471:63: error: use of undeclared identifier 'cudaMemoryTypeDevice'; did you mean 'hipMemoryTypeDevice'?",
+        "2026-10-19T13:00:30.5184115Z gmake[2]: *** [ggml/src/ggml-hip/CMakeFiles/ggml-hip.dir/build.make:348: ggml/src/ggml-hip/CMakeFiles/ggml-hip.dir/__/ggml-cuda/ggml-cuda.cu.o] Error 1",
+        "2026-10-19T13:00:35.4814822Z gmake[1]: *** [CMakeFiles/Makefile2:1855: ggml/src/ggml-hip/CMakeFiles/ggml-hip.dir/all] Error 2",
+        "2026-10-19T13:00:35.4815933Z gmake: *** [Makefile:146: all] Error 2"
+      ],
+      "source_line_checks": [
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 235,
+          "source": "if (cudaHostAlloc(&ptr, MAX_EXPERT_SIZE, cudaHostAllocMapped) != cudaSuccess) {",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 682,
+          "source": "CUDA_CHECK(cudaMemcpyAsync(*dst, src->data, n_bytes, cudaMemcpyDefault, 0));",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 769,
+          "source": "CUDA_CHECK(cudaMemcpyAsync(emb_dev, emb_base, emb_row_bytes, cudaMemcpyDefault, stream));",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 1065,
+          "source": "cudaSetDeviceFlags(cudaDeviceMapHost);",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 3458,
+          "source": "cudaPointerAttributes attr;",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 3470,
+          "source": "cudaError_t attr_err = cudaPointerGetAttributes(&attr, host_source_ptr);",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 3471,
+          "source": "if (attr_err == cudaSuccess && attr.memoryType == cudaMemoryTypeDevice) {",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 3471,
+          "source": "if (attr_err == cudaSuccess && attr.memoryType == cudaMemoryTypeDevice) {",
+          "same_source_line_in_baseline": true
+        }
+      ]
+    },
+    {
+      "name": "ubuntu-cpu-cmake (x64, ubuntu-22.04)",
+      "url": "https://github.com/angerybob/S2-MoE/actions/runs/39256002974/job/118071921284",
+      "errors": [
+        "2026-10-19T12:58:36.3464785Z /home/runner/work/S2-MoE/S2-MoE/src/llama.cpp:54:17: error: no previous declaration for \u2018void ggml_cuda_register_ssd_expert(const char*, const char*, size_t, size_t, void*)\u2019 [-Werror=missing-declarations]",
+        "2026-10-19T12:58:36.3491749Z /home/runner/work/S2-MoE/S2-MoE/src/llama.cpp:1351:25: error: unused variable \u2018model_dft\u2019 [-Werror=unused-variable]",
+        "2026-10-19T12:58:36.3495439Z /home/runner/work/S2-MoE/S2-MoE/src/llama.cpp:1352:25: error: unused variable \u2018model_tgt\u2019 [-Werror=unused-variable]",
+        "2026-10-19T12:58:36.3499208Z /home/runner/work/S2-MoE/S2-MoE/src/llama.cpp:1350:14: error: unused parameter \u2018apply_correction\u2019 [-Werror=unused-parameter]",
+        "2026-10-19T12:58:36.3502828Z gmake[2]: *** [src/CMakeFiles/llama.dir/build.make:79: src/CMakeFiles/llama.dir/llama.cpp.o] Error 1",
+        "2026-10-19T12:58:38.6310217Z /home/runner/work/S2-MoE/S2-MoE/src/llama-context.cpp:804:20: error: unused variable \u2018t_start_us\u2019 [-Werror=unused-variable]",
+        "2026-10-19T12:58:38.6312709Z /home/runner/work/S2-MoE/S2-MoE/src/llama-context.cpp:825:20: error: unused variable \u2018t_start_us\u2019 [-Werror=unused-variable]",
+        "2026-10-19T12:58:38.6316302Z /home/runner/work/S2-MoE/S2-MoE/src/llama-context.cpp:1699:14: error: unused variable \u2018has_target_hs\u2019 [-Werror=unused-variable]",
+        "2026-10-19T12:58:38.6319751Z /home/runner/work/S2-MoE/S2-MoE/src/llama-context.cpp:3919:15: error: unused variable \u2018num_eagle_layers\u2019 [-Werror=unused-variable]",
+        "2026-10-19T12:58:38.6321959Z gmake[2]: *** [src/CMakeFiles/llama.dir/build.make:149: src/CMakeFiles/llama.dir/llama-context.cpp.o] Error 1",
+        "2026-10-19T12:58:54.7159806Z /home/runner/work/S2-MoE/S2-MoE/src/llama-model.cpp:21560:12: error: enumeration value \u2018LLM_ARCH_QWEN3VL\u2019 not handled in switch [-Werror=switch]",
+        "2026-10-19T12:58:54.7172867Z gmake[2]: *** [src/CMakeFiles/llama.dir/build.make:359: src/CMakeFiles/llama.dir/llama-model.cpp.o] Error 1",
+        "2026-10-19T12:58:54.7175929Z gmake[1]: *** [CMakeFiles/Makefile2:2386: src/CMakeFiles/llama.dir/all] Error 2",
+        "2026-10-19T12:58:54.7179434Z gmake: *** [Makefile:146: all] Error 2"
+      ],
+      "source_line_checks": [
+        {
+          "path": "src/llama.cpp",
+          "observed_line": 54,
+          "source": "extern \"C\" void ggml_cuda_register_ssd_expert(const char*, const char*, size_t, size_t, void*) {}",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "src/llama.cpp",
+          "observed_line": 1351,
+          "source": "const llama_model * model_dft = llama_get_model(ctx_dft);",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "src/llama.cpp",
+          "observed_line": 1352,
+          "source": "const llama_model * model_tgt = llama_get_model(ctx_tgt);",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "src/llama.cpp",
+          "observed_line": 1350,
+          "source": "bool apply_correction) {",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "src/llama-context.cpp",
+          "observed_line": 804,
+          "source": "const auto t_start_us = ggml_time_us();",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "src/llama-context.cpp",
+          "observed_line": 825,
+          "source": "const auto t_start_us = ggml_time_us();",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "src/llama-context.cpp",
+          "observed_line": 1699,
+          "source": "bool has_target_hs = has_target_hidden_states();",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "src/llama-context.cpp",
+          "observed_line": 3919,
+          "source": "const int num_eagle_layers = sizeof(eagle_layers) / sizeof(eagle_layers[0]);",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "src/llama-model.cpp",
+          "observed_line": 21560,
+          "source": "switch (model->arch) {",
+          "same_source_line_in_baseline": true
+        }
+      ]
+    },
+    {
+      "name": "ubuntu-latest-cmake-sanitizer (UNDEFINED, Debug)",
+      "url": "https://github.com/angerybob/S2-MoE/actions/runs/39256002974/job/118071921277",
+      "errors": [
+        "2026-10-19T12:58:55.7021185Z /home/runner/work/S2-MoE/S2-MoE/ggml/src/ggml-cpu/ops.cpp:25:20: error: the address of \u2018ggml_tensor::name\u2019 will never be NULL [-Werror=address]",
+        "2026-10-19T12:58:55.7031791Z gmake[2]: *** [ggml/src/CMakeFiles/ggml-cpu.dir/build.make:233: ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ops.cpp.o] Error 1",
+        "2026-10-19T12:58:55.7089124Z gmake[1]: *** [CMakeFiles/Makefile2:2272: ggml/src/CMakeFiles/ggml-cpu.dir/all] Error 2",
+        "2026-10-19T12:58:55.7090084Z gmake: *** [Makefile:146: all] Error 2"
+      ],
+      "source_line_checks": [
+        {
+          "path": "ggml/src/ggml-cpu/ops.cpp",
+          "observed_line": 25,
+          "source": "return t && t->name && key && strstr(t->name, key) != nullptr;",
+          "same_source_line_in_baseline": true
+        }
+      ]
+    },
+    {
+      "name": "windows-latest-cmake-hip",
+      "url": "https://github.com/angerybob/S2-MoE/actions/runs/39256002974/job/118071921248",
+      "errors": [
+        "2026-10-19T12:58:06.2811656Z ##[error]error: invalid path '?'\r"
+      ],
+      "source_line_checks": []
+    },
+    {
+      "name": "windows-msys2 (UCRT64, ucrt-x86_64, Release)",
+      "url": "https://github.com/angerybob/S2-MoE/actions/runs/39256002974/job/118071921229",
+      "errors": [
+        "2026-10-19T12:58:09.7343596Z ##[error]error: invalid path '?'\r"
+      ],
+      "source_line_checks": []
+    },
+    {
+      "name": "ubuntu-22-cmake-musa",
+      "url": "https://github.com/angerybob/S2-MoE/actions/runs/39256002974/job/118071921190",
+      "errors": [
+        "2026-10-19T13:00:04.1998540Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:235:46: error: use of undeclared identifier 'cudaHostAllocMapped'",
+        "2026-10-19T13:00:04.2290175Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:682:62: error: use of undeclared identifier 'cudaMemcpyDefault'; did you mean 'musaMemcpyDefault'?",
+        "2026-10-19T13:00:04.2431822Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:769:74: error: use of undeclared identifier 'cudaMemcpyDefault'; did you mean 'musaMemcpyDefault'?",
+        "2026-10-19T13:00:04.2666613Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:1065:24: error: use of undeclared identifier 'cudaDeviceMapHost'",
+        "2026-10-19T13:00:04.3367335Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:3458:13: error: unknown type name 'cudaPointerAttributes'; did you mean 'musaPointerAttributes'?",
+        "2026-10-19T13:00:04.3536679Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:3470:36: error: use of undeclared identifier 'cudaPointerGetAttributes'; did you mean 'musaPointerGetAttributes'?",
+        "2026-10-19T13:00:04.3540932Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:3471:49: error: no member named 'memoryType' in 'musaPointerAttributes'",
+        "2026-10-19T13:00:04.3653217Z /__w/S2-MoE/S2-MoE/ggml/src/ggml-cuda/ggml-cuda.cu:3471:63: error: use of undeclared identifier 'cudaMemoryTypeDevice'; did you mean 'musaMemoryTypeDevice'?",
+        "2026-10-19T13:00:04.5566423Z gmake[2]: *** [ggml/src/ggml-musa/CMakeFiles/ggml-musa.dir/build.make:370: ggml/src/ggml-musa/CMakeFiles/ggml-musa.dir/__/ggml-cuda/ggml-cuda.cu.o] Error 1",
+        "2026-10-19T13:00:06.8869406Z gmake[1]: *** [CMakeFiles/Makefile2:1855: ggml/src/ggml-musa/CMakeFiles/ggml-musa.dir/all] Error 2",
+        "2026-10-19T13:00:06.8869965Z gmake: *** [Makefile:146: all] Error 2"
+      ],
+      "source_line_checks": [
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 235,
+          "source": "if (cudaHostAlloc(&ptr, MAX_EXPERT_SIZE, cudaHostAllocMapped) != cudaSuccess) {",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 682,
+          "source": "CUDA_CHECK(cudaMemcpyAsync(*dst, src->data, n_bytes, cudaMemcpyDefault, 0));",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 769,
+          "source": "CUDA_CHECK(cudaMemcpyAsync(emb_dev, emb_base, emb_row_bytes, cudaMemcpyDefault, stream));",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 1065,
+          "source": "cudaSetDeviceFlags(cudaDeviceMapHost);",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 3458,
+          "source": "cudaPointerAttributes attr;",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 3470,
+          "source": "cudaError_t attr_err = cudaPointerGetAttributes(&attr, host_source_ptr);",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 3471,
+          "source": "if (attr_err == cudaSuccess && attr.memoryType == cudaMemoryTypeDevice) {",
+          "same_source_line_in_baseline": true
+        },
+        {
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu",
+          "observed_line": 3471,
+          "source": "if (attr_err == cudaSuccess && attr.memoryType == cudaMemoryTypeDevice) {",
+          "same_source_line_in_baseline": true
+        }
+      ]
+    },
+    {
+      "name": "ubuntu-latest-cmake-sanitizer (THREAD, Debug)",
+      "url": "https://github.com/angerybob/S2-MoE/actions/runs/39256002974/job/118071920976",
+      "errors": [
+        "2026-10-19T12:58:33.6223802Z /home/runner/work/S2-MoE/S2-MoE/ggml/src/ggml-cpu/ops.cpp:25:20: error: the address of \u2018ggml_tensor::name\u2019 will never be NULL [-Werror=address]",
+        "2026-10-19T12:58:33.6231921Z gmake[2]: *** [ggml/src/CMakeFiles/ggml-cpu.dir/build.make:233: ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ops.cpp.o] Error 1",
+        "2026-10-19T12:58:33.6233931Z gmake[1]: *** [CMakeFiles/Makefile2:2272: ggml/src/CMakeFiles/ggml-cpu.dir/all] Error 2",
+        "2026-10-19T12:58:33.6236048Z gmake: *** [Makefile:146: all] Error 2"
+      ],
+      "source_line_checks": [
+        {
+          "path": "ggml/src/ggml-cpu/ops.cpp",
+          "observed_line": 25,
+          "source": "return t && t->name && key && strstr(t->name, key) != nullptr;",
+          "same_source_line_in_baseline": true
+        }
+      ]
+    },
+    {
+      "name": "ubuntu-latest-llguidance",
+      "url": "https://github.com/angerybob/S2-MoE/actions/runs/39256002974/job/118071920683",
+      "errors": [
+        "2026-10-19T12:58:20.1691765Z warning: failed to connect to jobserver from environment variable `MAKEFLAGS=\"s -j4 --jobserver-auth=3,4\"`: cannot open file descriptor 3 from the jobserver environment variable value: Bad file descriptor (os error 9)",
+        "2026-10-19T12:58:31.9461239Z /home/runner/work/S2-MoE/S2-MoE/ggml/src/ggml-cpu/ops.cpp:25:20: error: the address of \u2018ggml_tensor::name\u2019 will never be NULL [-Werror=address]",
+        "2026-10-19T12:58:44.1215031Z gmake[2]: *** [ggml/src/CMakeFiles/ggml-cpu.dir/build.make:233: ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ops.cpp.o] Error 1",
+        "2026-10-19T12:58:44.1216845Z gmake[1]: *** [CMakeFiles/Makefile2:2278: ggml/src/CMakeFiles/ggml-cpu.dir/all] Error 2",
+        "2026-10-19T12:59:01.8584578Z gmake: *** [Makefile:146: all] Error 2"
+      ],
+      "source_line_checks": [
+        {
+          "path": "ggml/src/ggml-cpu/ops.cpp",
+          "observed_line": 25,
+          "source": "return t && t->name && key && strstr(t->name, key) != nullptr;",
+          "same_source_line_in_baseline": true
+        }
+      ]
+    },
+    {
+      "name": "server-windows",
+      "url": "https://github.com/angerybob/S2-MoE/actions/runs/39256002910/job/118071347463",
+      "errors": [
+        "2026-10-19T12:56:49.5907877Z ##[error]error: invalid path '?'\r"
+      ],
+      "source_line_checks": []
+    },
+    {
+      "name": "pyright type-check",
+      "url": "https://github.com/angerybob/S2-MoE/actions/runs/39256002662/job/118071449748",
+      "errors": [
+        "2026-10-19T12:58:45.6417682Z /home/runner/work/S2-MoE/S2-MoE/convert_hf_to_gguf.py:4036:22 - error: Type \"list[tuple[str | None, Tensor]]\" is not assignable to return type \"Iterable[tuple[str, Tensor]]\"",
+        "2026-10-19T12:58:45.6452747Z /home/runner/work/S2-MoE/S2-MoE/convert_hf_to_gguf.py:4038:22 - error: Type \"list[tuple[str | None, Tensor]]\" is not assignable to return type \"Iterable[tuple[str, Tensor]]\"",
+        "2026-10-19T12:58:45.6458611Z /home/runner/work/S2-MoE/S2-MoE/convert_hf_to_gguf.py:4045:22 - error: Type \"list[tuple[str | None, Tensor]]\" is not assignable to return type \"Iterable[tuple[str, Tensor]]\"",
+        "2026-10-19T12:58:45.6464840Z /home/runner/work/S2-MoE/S2-MoE/search.py:9:6 - error: Import \"bayes_opt\" could not be resolved (reportMissingImports)",
+        "2026-10-19T12:58:45.6467320Z /home/runner/work/S2-MoE/S2-MoE/search.py:86:25 - error: \"write\" is not a known attribute of \"None\" (reportOptionalMemberAccess)",
+        "2026-10-19T12:58:45.6470529Z /home/runner/work/S2-MoE/S2-MoE/search.py:87:25 - error: \"flush\" is not a known attribute of \"None\" (reportOptionalMemberAccess)",
+        "2026-10-19T12:58:45.6473237Z /home/runner/work/S2-MoE/S2-MoE/search.py:91:37 - error: \"readline\" is not a known attribute of \"None\" (reportOptionalMemberAccess)",
+        "2026-10-19T12:58:45.6476030Z /home/runner/work/S2-MoE/S2-MoE/examples/json_schema_pydantic_example.py:68:58 - error: Expected 0 positional arguments (reportCallIssue)",
+        "2026-10-19T12:58:45.6478444Z /home/runner/work/S2-MoE/S2-MoE/examples/json_schema_pydantic_example.py:69:75 - error: Expected 0 positional arguments (reportCallIssue)",
+        "2026-10-19T12:58:45.6486146Z /home/runner/work/S2-MoE/S2-MoE/examples/speculative/run_spec.py:157:21 - error: Object of type \"None\" cannot be used as iterable value (reportOptionalIterable)",
+        "2026-10-19T12:58:45.6488797Z /home/runner/work/S2-MoE/S2-MoE/gguf-py/gguf/vocab.py:693:13 - error: Operator \"/\" not supported for types \"Path\" and \"tuple[str, str] | Literal['tekken.json']\"",
+        "2026-10-19T12:58:45.6494398Z /home/runner/work/S2-MoE/S2-MoE/gguf-py/gguf/vocab.py:701:32 - error: Operator \"/\" not supported for types \"Path\" and \"tuple[str, str] | Literal['tekken.json']\"",
+        "2026-10-19T12:58:45.6503029Z /home/runner/work/S2-MoE/S2-MoE/gguf-py/gguf/vocab.py:721:43 - error: Cannot access attribute \"IdToPiece\" for class \"_SentencePieceModel\"",
+        "2026-10-19T12:58:45.6509382Z /home/runner/work/S2-MoE/S2-MoE/gguf-py/gguf/vocab.py:723:50 - error: Cannot access attribute \"GetScore\" for class \"_SentencePieceModel\"",
+        "2026-10-19T12:58:45.6515842Z /home/runner/work/S2-MoE/S2-MoE/gguf-py/gguf/vocab.py:726:38 - error: Cannot access attribute \"IsUnknown\" for class \"_SentencePieceModel\"",
+        "2026-10-19T12:58:45.6522326Z /home/runner/work/S2-MoE/S2-MoE/gguf-py/gguf/vocab.py:731:38 - error: Cannot access attribute \"IsUnused\" for class \"_SentencePieceModel\"",
+        "2026-10-19T12:58:45.6528627Z /home/runner/work/S2-MoE/S2-MoE/gguf-py/gguf/vocab.py:733:38 - error: Cannot access attribute \"IsByte\" for class \"_SentencePieceModel\""
+      ],
+      "source_line_checks": []
+    }
+  ],
+  "gpu_fixture_ctest": {
+    "passed": 35,
+    "failed": 0,
+    "seconds": 87.84
+  },
+  "logging_ast_comparison": {
+    "files": 4,
+    "non_logging_ast_unchanged": true
+  },
+  "limitations": [
+    "The fatal-warning builds stop at the same inherited ggml-cpu error; this is not an all-target clean build.",
+    "HIP/MUSA attribution checks observed error-site source against orin; these backends were not qualified by this contribution.",
+    "Queued, cancelled, or uninspected jobs are not claimed to pass."
+  ]
+}

@@ -83,6 +83,8 @@ struct llama_model_loader {
     // 解析 JSON 文件的辅助函数
     void load_hot_experts(const char* path);
     bool is_tensor_hot(const std::string & name) const;
+    void split_packed_ssd_experts();
+    void configure_ssd_budget(uint64_t bytes, bool explicit_hot_list);
 // --- INSERT END ---
     static const int TENSOR_NOT_REQUIRED = 1 << 0;
     static const int TENSOR_DUPLICATED   = 1 << 1;

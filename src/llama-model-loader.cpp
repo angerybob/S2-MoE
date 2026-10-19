@@ -3,6 +3,7 @@
 #include "ggml.h"
 
 #include <array>
+#include <algorithm>
 #include <cinttypes>
 #include <cstring>
 #include <future>
@@ -871,11 +872,99 @@ llama_model_loader::llama_model_loader(
     this->check_tensors = check_tensors;
     // --- INSERT ---
     this->use_ssd_moe = use_ssd_moe;
+    if (use_ssd_moe && llm_arch_is_qwen_delta_net(get_arch())) {
+        split_packed_ssd_experts();
+    }
     // --------------
     // 加载热专家
     if (hot_experts_path) {
         load_hot_experts(hot_experts_path);
     }
+}
+
+void llama_model_loader::split_packed_ssd_experts() {
+    // Alias byte ranges in the original GGUF. No repacking or full expert
+    // allocation is needed, including for sharded and quantized GGUF files.
+    static const std::regex packed(R"(^blk\.(\d+)\.ffn_(gate|up|down)_exps\.weight$)");
+    size_t count = 0;
+    for (const auto & item : weights_map) {
+        if (std::regex_match(item.first, packed)) count += item.second.tensor->ne[2];
+    }
+    if (!count) return;
+    ggml_init_params ip = {ggml_tensor_overhead() * count, nullptr, true};
+    ggml_context_ptr aliases(ggml_init(ip));
+    if (!aliases) throw std::runtime_error("cannot allocate SSD expert metadata");
+    for (auto it = weights_map.begin(); it != weights_map.end();) {
+        std::smatch match;
+        if (!std::regex_match(it->first, match, packed)) { ++it; continue; }
+        const auto weight = it->second;
+        const auto * tensor = weight.tensor;
+        if (!ggml_is_contiguous(tensor) || tensor->ne[3] != 1 || tensor->ne[2] < 1) {
+            throw std::runtime_error("unsupported packed SSD expert layout: " + it->first);
+        }
+        for (int expert = 0; expert < tensor->ne[2]; ++expert) {
+            const std::string name = format("blk.%s.ffn_%s.%03d.weight",
+                match[1].str().c_str(), match[2].str().c_str(), expert);
+            auto slice = weight;
+            slice.tensor = ggml_new_tensor_2d(aliases.get(), tensor->type, tensor->ne[0], tensor->ne[1]);
+            ggml_set_name(slice.tensor, name.c_str());
+            slice.offs += expert * tensor->nb[2];
+            if (!weights_map.emplace(name, slice).second) {
+                throw std::runtime_error("mixed packed/split SSD expert: " + name);
+            }
+        }
+        it = weights_map.erase(it);
+    }
+    contexts.emplace_back(std::move(aliases));
+    n_tensors = weights_map.size();
+    LLAMA_LOG_INFO("%s: indexed %zu expert projections directly in original GGUF\n", __func__, count);
+}
+
+void llama_model_loader::configure_ssd_budget(uint64_t bytes, bool explicit_hot_list) {
+    if (!bytes) return;
+    if (!use_ssd_moe || !llm_arch_is_qwen_delta_net(get_arch())) {
+        throw std::invalid_argument("SSD weight budget requires a Qwen hybrid model in SSD mode");
+    }
+    uint64_t dense = 0, hot = 0;
+    std::map<std::pair<int, int>, uint64_t> bundles;
+    for (const auto & item : weights_map) {
+        int layer, expert;
+        // Include the CUDA quantized last-row padding (512-element boundary)
+        // and conservative per-tensor alignment, not just the GGUF payload.
+        const auto * tensor = item.second.tensor;
+        uint64_t payload = ggml_nbytes(tensor);
+        if (ggml_is_quantized(tensor->type) && tensor->ne[0] % 512) {
+            payload += ggml_row_size(tensor->type, 512 - tensor->ne[0] % 512);
+        }
+        const uint64_t size = (payload + 511) & ~uint64_t(511);
+        if (parse_split_expert_name(item.first, layer, expert)) bundles[{layer, expert}] += size;
+        else dense += size;
+    }
+    if (dense > bytes) throw std::invalid_argument("SSD budget cannot hold all non-routed weights");
+    if (explicit_hot_list) {
+        for (const auto & key : hot_expert_indices) {
+            auto it = bundles.find(key);
+            if (it == bundles.end()) throw std::invalid_argument("hot expert absent from model");
+            if (it->second > bytes - dense - hot) throw std::invalid_argument("hot-expert list exceeds SSD weight budget");
+            hot += it->second;
+        }
+    } else {
+        // Deterministic layer-balanced fallback. A separately profiled hot list
+        // is preferable; never profile the evaluation prompt to select itself.
+        std::vector<std::pair<int, int>> order;
+        for (const auto & item : bundles) order.push_back(item.first);
+        std::sort(order.begin(), order.end(), [](const auto & a, const auto & b) {
+            return std::make_pair(a.second, a.first) < std::make_pair(b.second, b.first);
+        });
+        for (const auto & key : order) {
+            if (bundles.at(key) <= bytes - dense - hot) {
+                hot_expert_indices.insert(key);
+                hot += bundles.at(key);
+            }
+        }
+    }
+    LLAMA_LOG_INFO("S2MOE_PLACEMENT dense_bytes=%" PRIu64 " hot_bytes=%" PRIu64
+        " resident_experts=%zu weight_budget=%" PRIu64 "\n", dense, hot, hot_expert_indices.size(), bytes);
 }
 
 std::string llama_model_loader::get_arch_name() const {

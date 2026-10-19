@@ -29,8 +29,17 @@ with tempfile.TemporaryDirectory() as directory:
             if actual != reference:
                 raise AssertionError(f"greedy token mismatch: depth={depth}, experts={experts}")
             sys.stdout.write(f"PASS greedy AR equality depth={depth}, experts={experts}, tokens={len(actual)}\n")
+    for index, extra in enumerate((
+        ["--draft-max", "4", "--draft-expert-topk", "1", "--draft-branches", "2"],
+        ["--draft-max", "4", "--draft-expert-topk", "1", "--draft-branches", "2", "--prune", "1", "--prune-score-thresh", "0"],
+        ["--draft-max", "4", "--prune", "1", "--prune-conf-thresh", "1"],
+    )):
+        actual = run([*extra, "--audit-state-copies"], f"tree-prune-{index}.json")
+        if actual != reference:
+            raise AssertionError(f"hybrid tree/prune token mismatch: {extra}")
+    sys.stdout.write("PASS bounded tree, pruned tree and zero-extension pruning against AR\n")
     for args in (["--draft-max", "32"], ["--draft-max", "8", "-ub", "4"],
-                 ["--draft-skip-attn", "0"], ["-np", "2"], ["--temp", "0.8"], ["--prune", "1"]):
+                 ["--draft-skip-attn", "0"], ["-np", "0"], ["--temp", "0.8"], ["--prune", "2"]):
         result = subprocess.run([exe, "-m", model, *args], capture_output=True)
         if result.returncode == 0:
             raise AssertionError(f"unsupported configuration accepted: {args}")

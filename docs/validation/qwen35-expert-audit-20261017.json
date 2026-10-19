@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "test_source_sha256": "dc987fa6b553736e924f60ce897fab23bc7819226592cd997aaff015faaabdc0",
+  "real_model_sha256": "f23b26ea23f30a491728b1e4448f22e1bcbe69805bba8618f2277f18ac3cdaea",
+  "cases": [
+    {
+      "host": "orin-60",
+      "scope": "CPU fixture",
+      "target_logits_identical": true,
+      "audits": [
+        {
+          "topk": 1,
+          "target_topk": 2,
+          "layers": 8,
+          "recurrent": 6,
+          "attention": 2,
+          "shared": 8,
+          "routed_elements": 2112,
+          "target_elements": 4224
+        },
+        {
+          "topk": 2,
+          "target_topk": 2,
+          "layers": 8,
+          "recurrent": 6,
+          "attention": 2,
+          "shared": 8,
+          "routed_elements": 4224,
+          "target_elements": 4224
+        }
+      ],
+      "passed": true
+    },
+    {
+      "host": "orin-60",
+      "scope": "CUDA fixture",
+      "target_logits_identical": true,
+      "audits": [
+        {
+          "topk": 1,
+          "target_topk": 2,
+          "layers": 8,
+          "recurrent": 6,
+          "attention": 2,
+          "shared": 8,
+          "routed_elements": 2112,
+          "target_elements": 4224
+        },
+        {
+          "topk": 2,
+          "target_topk": 2,
+          "layers": 8,
+          "recurrent": 6,
+          "attention": 2,
+          "shared": 8,
+          "routed_elements": 4224,
+          "target_elements": 4224
+        }
+      ],
+      "passed": true
+    },
+    {
+      "host": "2x-A100",
+      "scope": "CPU real Q8_0",
+      "target_logits_identical": true,
+      "audits": [
+        {
+          "topk": 1,
+          "target_topk": 8,
+          "layers": 40,
+          "recurrent": 30,
+          "attention": 10,
+          "shared": 40,
+          "routed_elements": 362496,
+          "target_elements": 2899968
+        },
+        {
+          "topk": 2,
+          "target_topk": 8,
+          "layers": 40,
+          "recurrent": 30,
+          "attention": 10,
+          "shared": 40,
+          "routed_elements": 724992,
+          "target_elements": 2899968
+        },
+        {
+          "topk": 8,
+          "target_topk": 8,
+          "layers": 40,
+          "recurrent": 30,
+          "attention": 10,
+          "shared": 40,
+          "routed_elements": 2899968,
+          "target_elements": 2899968
+        }
+      ],
+      "passed": true
+    }
+  ],
+  "status": "passed"
+}
