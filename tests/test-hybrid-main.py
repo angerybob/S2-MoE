@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise architecture dispatch and the public JSON runner end to end."""
 import json
+import logging
 from pathlib import Path
 import subprocess
 import sys
@@ -8,6 +9,7 @@ import tempfile
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     entry, dedicated, model, runner = [Path(arg).resolve() for arg in sys.argv[1:]]
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)
@@ -29,7 +31,7 @@ def main():
             raise RuntimeError(result.stderr.decode(errors="replace"))
         if json.loads(reference.read_text()) != json.loads(output.read_text()):
             raise AssertionError("main/JSON hybrid dispatcher differs from dedicated AR")
-    print("PASS public main entry + hybrid JSON configuration + adaptive tree against dedicated AR")
+    logging.info("PASS public main entry + hybrid JSON configuration + adaptive tree against dedicated AR")
 
 
 if __name__ == "__main__":

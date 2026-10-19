@@ -6,11 +6,13 @@ No downloads, global cache drops, or power-policy changes.
 """
 import argparse
 import json
+import logging
 from pathlib import Path
 import subprocess
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     ap = argparse.ArgumentParser()
     ap.add_argument("--exe", required=True, type=Path)
     ap.add_argument("--model", required=True, type=Path)
@@ -86,7 +88,7 @@ def main():
         report["cases"].append(entry)
         report["failures"] = failures
         (args.output / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
-        print(f"{name}: rc={result.returncode} exact={entry.get('matches_ar')}", flush=True)
+        logging.info("%s: rc=%s exact=%s", name, result.returncode, entry.get('matches_ar'))
     report["status"] = "failed" if failures else "passed"
     (args.output / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
     if failures:

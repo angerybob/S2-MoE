@@ -26,6 +26,13 @@ AR controls, also equal the unchanged pre-fix AR prefix. Auditing, logit tracing
 batch diagnostics and approximate expert reuse are off. CUDA graphs/reuse remain
 disabled. Each invocation loads weights once, with fresh contexts per case.
 
+The executed harness is preserved at commit
+[`a88614c633`](https://github.com/angerybob/S2-MoE/blob/a88614c633ca8040f0ca5e1968f7e68c3e965619/tests/benchmark-qwen35-ssd-speed.py);
+its SHA-256 is recorded in the JSON. The review follow-up changes only progress
+messages from `print` to logging to satisfy the repository lint plugin. It does
+not change the schedule, commands, output files, validity checks, or inference
+code, and does not regenerate or relabel the historical measurements.
+
 ## Comparison design
 
 Primary total allocation budget is **8 GiB**, with **3 GiB runtime reserve**;

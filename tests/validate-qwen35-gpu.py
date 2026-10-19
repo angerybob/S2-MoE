@@ -8,6 +8,7 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import signal
@@ -28,6 +29,7 @@ def stamp(path):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--binary", required=True, type=Path)
     ap.add_argument("--model", required=True, type=Path)
@@ -130,7 +132,7 @@ def main():
             report["cases"].append(record)
             index += 1
             save()
-            print(f"{case['id']}: valid={valid} tokens={len(tokens)} first_diff={first_diff} frozen_AR={old_match}", flush=True)
+            logging.info("%s: valid=%s tokens=%s first_diff=%s frozen_AR=%s", case['id'], valid, len(tokens), first_diff, old_match)
             if not valid:
                 raise RuntimeError(f"{case['id']}: token, residency, or frozen-AR check failed")
 

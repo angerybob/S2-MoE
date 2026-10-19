@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import random
@@ -38,6 +39,7 @@ def machine():
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[1])
     ap.add_argument('--model', required=True, type=Path)
@@ -131,7 +133,7 @@ def main():
                 command += ['--prune', '1', '--prune-tpot', '5000', '--prune-bandwidth', '0.15', '--prune-score-thresh', '1']
             suite.update(command=command, start_machine=machine(), started_at=datetime.now(timezone.utc).isoformat())
             save()
-            print('START', name, len(suite['plan']), flush=True)
+            logging.info('START %s %s', name, len(suite['plan']))
             index = 0
 
             def harvest():
@@ -165,7 +167,7 @@ def main():
                     report['cases'].append(record)
                     index += 1
                     save()
-                    print(f"END {name}/{item['id']} {len(report['cases'])}/{total} valid={valid} tps={record['decode_tps']:.4f}", flush=True)
+                    logging.info("END %s/%s %s/%s valid=%s tps=%.4f", name, item['id'], len(report['cases']), total, valid, record['decode_tps'])
                     if not valid:
                         raise RuntimeError('token, allocation or timing validation failed: ' + name + '/' + item['id'])
 
